@@ -1,14 +1,14 @@
 import numpy as np
 from cv2.typing import MatLike
-from src.trackers.tracker import Tracker
+from layers.infraestructure.video_analysis.trackers.tracker import Tracker
 
-from layers.infraestructure.services.video_processing_service import (
+from layers.infraestructure.video_analysis.services.video_processing_service import (
     read_video, save_video)
-from src.camera_movement_estimator.camera_movement_estimator import CameraMovementEstimator
-from src.player_ball_assigner.player_ball_assigner import PlayerBallAssigner
-from src.speed_and_distance_estimator.speed_and_distance_estimator import SpeedAndDistance_Estimator
-from src.team_assigner.team_assigner import TeamAssigner
-from src.view_transformer.view_transformer import ViewTransformer
+from layers.infraestructure.video_analysis.camera_movement_estimator.camera_movement_estimator import CameraMovementEstimator
+from layers.infraestructure.video_analysis.player_ball_assigner.player_ball_assigner import PlayerBallAssigner
+from layers.infraestructure.video_analysis.speed_and_distance_estimator.speed_and_distance_estimator import SpeedAndDistance_Estimator
+from layers.infraestructure.video_analysis.team_assigner.team_assigner import TeamAssigner
+from layers.infraestructure.video_analysis.view_transformer.view_transformer import ViewTransformer
 
 
 def main():
@@ -17,7 +17,7 @@ def main():
 
     # Initialize Tracker
     version = 11 
-    size = 'n' # puede ser 'n', 's', 'm', 'l', 'x'
+    size = 's' # puede ser 'n', 's', 'm', 'l', 'x'
     tracker = Tracker(f'./res/models/yolo{version}{size}.pt')
 
     tracks = tracker.get_object_tracks(
@@ -87,7 +87,7 @@ def main():
     output_video_frames = camera_movement_estimator.draw_camera_movement(output_video_frames,camera_movement_per_frame)
 
     ## Draw Speed and Distance
-    speed_and_distance_estimator.draw_speed_and_distance(output_video_frames,tracks)
+    speed_and_distance_estimator.draw_speed_and_distance(output_video_frames, tracks)
 
     # Save video
     save_video(output_video_frames, './res/output_videos/output_video.avi')
