@@ -1,6 +1,7 @@
 import numpy as np
 from cv2.typing import MatLike
 from layers.infraestructure.video_analysis.trackers.tracker import Tracker
+import json
 
 from layers.infraestructure.video_analysis.services.video_processing_service import (
     read_video, save_video)
@@ -11,13 +12,14 @@ from layers.infraestructure.video_analysis.team_assigner.team_assigner import Te
 from layers.infraestructure.video_analysis.view_transformer.view_transformer import ViewTransformer
 
 
+
 def main():
     # Read Video
     video_frames: list[MatLike] = read_video('./res/input_videos/08fd33_4.mp4') # Colocar el path del video
 
     # Initialize Tracker
     version = 11 
-    size = 's' # puede ser 'n', 's', 'm', 'l', 'x'
+    size = 'n' # puede ser 'n', 's', 'm', 'l', 'x'
     tracker = Tracker(f'./res/models/yolo{version}{size}.pt')
 
     tracks = tracker.get_object_tracks(
@@ -77,6 +79,9 @@ def main():
         else:
             team_ball_control.append(team_ball_control[-1])
     team_ball_control= np.array(team_ball_control)
+
+    with open("tracks.json", "w") as f:
+        json.dump(tracks, f, indent=4)    
 
 
     # Draw output 
