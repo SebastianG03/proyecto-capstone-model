@@ -1,5 +1,6 @@
 import numpy as np
 from cv2.typing import MatLike
+from layers.infraestructure.video_analysis.plotting.drawer_factory import DrawerFactory
 from layers.infraestructure.video_analysis.trackers.tracker import Tracker
 import json
 
@@ -10,7 +11,14 @@ from layers.infraestructure.video_analysis.player_ball_assigner.player_ball_assi
 from layers.infraestructure.video_analysis.speed_and_distance_estimator.speed_and_distance_estimator import SpeedAndDistance_Estimator
 from layers.infraestructure.video_analysis.team_assigner.team_assigner import TeamAssigner
 from layers.infraestructure.video_analysis.view_transformer.view_transformer import ViewTransformer
-
+from layers.infraestructure.video_analysis.plotting.voronoi_diagram_drawer import VoronoiDiagramDrawer
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()  # Convert NumPy arrays to Python lists
+        elif isinstance(obj, np.generic):
+            return obj.item()  # Convert NumPy scalar types to native Python types
+        return json.JSONEncoder.default(self, obj)
 
 
 def main():
@@ -80,8 +88,18 @@ def main():
             team_ball_control.append(team_ball_control[-1])
     team_ball_control= np.array(team_ball_control)
 
+    # Voronoi Diagram Drawer
+    DrawerFactory.run_drawer(
+        'voronoi',
+        tracks['players']
+    )
+
     with open("tracks.json", "w") as f:
-        json.dump(tracks, f, indent=4)    
+        try:
+            f.write(json.dumps(tracks['players'], cls=NumpyEncoder, indent=2))
+        except TypeError as e:
+            f.write(str(tracks['players']))
+            
 
 
     # Draw output 
