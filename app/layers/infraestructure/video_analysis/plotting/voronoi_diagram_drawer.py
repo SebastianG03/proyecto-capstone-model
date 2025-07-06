@@ -23,15 +23,14 @@ class VoronoiDiagramDrawer(Diagram):
         # (puedes modificarlo para procesar todos los frames)
         home_df, rival_df = pd.DataFrame(), pd.DataFrame()
 
-        home, rival = self.drawer_service.process_frame(self.players_tracks[0])
-
         for frame in self.players_tracks:
             home_players, rival_players = self.drawer_service.process_frame(frame)
-            home_df = pd.concat([home_df, home_players], join = 'inner', ignore_index=False)
-            rival_df = pd.concat([rival_df, rival_players], join ='inner', ignore_index=False)
+            home_df = pd.concat([home_df, home_players], ignore_index=False)
+            rival_df = pd.concat([rival_df, rival_players], ignore_index=False)
 
         
         if home_df.empty and rival_df.empty:
+            print("No players data available to draw Voronoi diagram.")
             return
 
         fig, ax = plt.subplots(figsize=(13, 8.5))
@@ -59,10 +58,8 @@ class VoronoiDiagramDrawer(Diagram):
         )
 
         # Obtener colores únicos por equipo
-        home_color =  home_df['color'] if not home_df.empty else self.home_team_color
-        rival_color = rival_df['color'] if not rival_df.empty else self.rival_team_color
-
-        print(f"Colors of voronoi: {home_color} -> home, and rival -> {rival_color}")
+        home_color =  home_df['color'].values[0] if not home_df.empty else self.home_team_color
+        rival_color = rival_df['color'].values[0] if not rival_df.empty else self.rival_team_color
 
         pitch.polygon(home_team, ax=ax, fc=home_color, ec='white', lw=2, alpha=0.5)
         pitch.polygon(rival_team, ax=ax, fc=rival_color, ec='white', lw=2, alpha=0.5)
