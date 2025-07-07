@@ -1,5 +1,5 @@
 from typing import List
-from app.layers.infraestructure.video_analysis.plotting.ball_trajectory_drawer import BallTrajectoryDrawer
+from layers.infraestructure.video_analysis.plotting.ball_trajectory_drawer import BallTrajectoryDrawer
 from layers.infraestructure.video_analysis.plotting.heatmap_drawer import HeatmapDrawer
 from layers.infraestructure.video_analysis.plotting.voronoi_diagram_drawer import VoronoiDiagramDrawer
 

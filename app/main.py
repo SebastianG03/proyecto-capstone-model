@@ -94,16 +94,19 @@ def main():
             'voronoi',
             tracks['players']
         )
+        print("Voronoi diagram drawed")
         DrawerFactory.run_drawer(
             'heatmap',
             tracks['players']
         )
+        print("Heatmap diagram drawed")
         DrawerFactory.run_drawer(
             'ball_drawer',
-            tracks
+            tracks['players']
         )
+        print("Ball trajectory diagram drawed")
     except Exception as e:
-        print(f"Error drawing Voronoi diagram: {e}")
+        print(f"Error drawing diagram: {e}")
 
     with open("tracks.json", "w") as f:
         try:
