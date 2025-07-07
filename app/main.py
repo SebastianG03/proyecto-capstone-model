@@ -98,6 +98,10 @@ def main():
             'heatmap',
             tracks['players']
         )
+        DrawerFactory.run_drawer(
+            'ball_drawer',
+            tracks
+        )
     except Exception as e:
         print(f"Error drawing Voronoi diagram: {e}")
 
