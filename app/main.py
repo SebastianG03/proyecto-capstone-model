@@ -94,6 +94,10 @@ def main():
             'voronoi',
             tracks['players']
         )
+        DrawerFactory.run_drawer(
+            'heatmap',
+            tracks['players']
+        )
     except Exception as e:
         print(f"Error drawing Voronoi diagram: {e}")
 
@@ -101,7 +105,7 @@ def main():
         try:
             f.write(json.dumps(tracks['players'], cls=NumpyEncoder, indent=2))
         except TypeError as e:
-            f.write(str(tracks['players']))
+            f.write(str(tracks))
             
 
 

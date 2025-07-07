@@ -1,4 +1,5 @@
 from typing import List
+from layers.infraestructure.video_analysis.plotting.heatmap_drawer import HeatmapDrawer
 from layers.infraestructure.video_analysis.plotting.voronoi_diagram_drawer import VoronoiDiagramDrawer
 
 
@@ -7,6 +8,7 @@ class DrawerFactory:
     def run_drawer(drawer_type: str, players_tracks: List) -> None:
         diagram_map = {
             'voronoi': VoronoiDiagramDrawer,
+            'heatmap': HeatmapDrawer  # <--- NUEVO
         }
 
 
