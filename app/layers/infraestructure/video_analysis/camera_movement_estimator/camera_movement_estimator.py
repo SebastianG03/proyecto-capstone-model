@@ -8,7 +8,7 @@ import pathlib
 from cv2.typing import MatLike
 
 sys.path.append('../')
-from app.layers.infraestructure.video_analysis.services.bbox_processor_service import (
+from layers.infraestructure.video_analysis.services.bbox_processor_service import (
     measure_scalar_distance, measure_vectorial_distance)
 
 

@@ -89,16 +89,23 @@ def main():
     team_ball_control= np.array(team_ball_control)
 
     # Voronoi Diagram Drawer
-    DrawerFactory.run_drawer(
-        'voronoi',
-        tracks['players']
-    )
+    try:
+        DrawerFactory.run_drawer(
+            'voronoi',
+            tracks['players']
+        )
+        DrawerFactory.run_drawer(
+            'heatmap',
+            tracks['players']
+        )
+    except Exception as e:
+        print(f"Error drawing Voronoi diagram: {e}")
 
     with open("tracks.json", "w") as f:
         try:
             f.write(json.dumps(tracks['players'], cls=NumpyEncoder, indent=2))
         except TypeError as e:
-            f.write(str(tracks['players']))
+            f.write(str(tracks))
             
 
 
