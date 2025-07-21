@@ -13,5 +13,6 @@ dependencies = [
     "pandas>=2.2.3",
     "scikit-learn>=1.6.1",
     "supervision>=0.25.1",
+    "torchmetrics>=1.7.4",
     "ultralytics>=8.3.144",
 ]

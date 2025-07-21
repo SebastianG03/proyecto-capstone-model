@@ -39,7 +39,7 @@ class VoronoiDiagramDrawer(Diagram):
 
         pitch = Pitch(
             pitch_type='statsbomb', 
-            pitch_color='black',#'grass', 
+            pitch_color='#1e4251',#'grass', 
             line_color='white',
             positional=True, 
             axis=True, 
