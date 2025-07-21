@@ -35,7 +35,7 @@ class HeatmapDrawer(Diagram):
 
         pitch = Pitch(
             pitch_type='statsbomb',
-            pitch_color='black',
+            pitch_color='#1e4251',
             line_color='white',
             axis=True,
             label=True,

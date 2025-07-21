@@ -175,3 +175,5 @@ cython_debug/
 app/res/input_videos/
 app/res/output_videos/
 app/res/stubs/
+
+app/tracks.json
