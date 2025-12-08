@@ -12,7 +12,11 @@ class BallEventModel(Base):
     x = Column(Float)
     y = Column(Float)
     z = Column(Float)
-    
+
+    # Vectorial Velocity
+    vx = Column(Float, default=0.0)
+    vy = Column(Float, default=0.0)
+
     # transformed position
     x_transformed = Column(Float, nullable=True)
     y_transformed = Column(Float, nullable=True)
@@ -43,6 +47,8 @@ class BallEventModel(Base):
             "x": self.x,
             "y": self.y,
             "z": self.z,
+            "vx": self.vx,
+            "vy": self.vy,
             "owner_id": self.owner_id,
             "track_id": self.track_id,
             "bbox": self.get_bbox(),
