@@ -18,7 +18,6 @@ analyze_router = APIRouter(
 async def analyze_video(
     payload: AnalyzeRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
 ):
     """
     No espera a que termine el procesamiento:

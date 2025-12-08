@@ -12,6 +12,7 @@ class PlayerStateModel(Base):
     player_id = Column(Integer, index=True, nullable=False)
     team = Column(String)
     color = Column(String)
+    shirt_number = Column(Integer, nullable=True)
 
     # Frame
     frame_index = Column(Integer, index=True)
@@ -80,6 +81,7 @@ class PlayerStateModel(Base):
             "player_id": self.player_id,
             "team": self.team,
             "color": self.color,
+            "shirt_number": self.shirt_number,
             "frame_index": self.frame_index,
             "bbox": self.get_bbox(),
             "x": self.x,

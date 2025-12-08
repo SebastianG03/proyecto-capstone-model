@@ -9,14 +9,16 @@ from app.modules.services.database import Base
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.tasks.upload import upload
-from app.utils.routes import OUTPUT_REPORTS_DIR
+from app.utils.routes import BASE_RES_DIR, OUTPUT_REPORTS_DIR
 
 async def process_video_async(video_name: str, match_id: int):
     """
     Ejecuta el análisis en segundo plano con una BD en memoria aislada.
     """
     print(f"Iniciando análisis en background para video: {video_name}, match_id: {match_id}")
-    engine = create_engine("sqlite://", echo=False, connect_args={"check_same_thread": False})
+    db_path = BASE_RES_DIR / "database" / f"temp_db_{match_id}.sqlite"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}", echo=False, connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
@@ -35,6 +37,8 @@ async def process_video_async(video_name: str, match_id: int):
         print("Cerrando sesión de base de datos y liberando recursos.")
         db.close()
         engine.dispose()
+        # db_path.unlink(missing_ok=True)
+
 
 async def process_run(db: Session, video_name: str, match_id: int, db_session_factory):
     

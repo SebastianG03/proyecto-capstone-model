@@ -97,18 +97,15 @@ class BallTracker(Tracker):
             "y": float(cy),
             "z": 0.0,
             "bbox": json.dumps(ball_bbox),
-            "owner_id": None
+            "owner_id": None,
+            "track_id": 0
         }
 
-        existing = None
-        try:
-            existing = tracks_collection.get_record_for_frame(track_id=0, frame_index=int(frame_num))
-        except Exception:
-            existing = None
+        existing = tracks_collection.get_record_for_frame(track_id=0, frame_index=int(frame_num))
 
         try:
             if existing:
-                tracks_collection.patch(existing.id, payload)
+                tracks_collection.patch(int(f'{existing.id}'), payload)
             else:
                 tracks_collection.post(payload)
         except Exception as e:

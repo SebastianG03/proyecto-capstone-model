@@ -19,6 +19,7 @@ class BallEventModel(Base):
     
     bbox = Column(String, nullable=True)
     owner_id = Column(Integer, index=True, nullable=True)
+    track_id = Column(Integer, index=True, default=0)
     
     def set_bbox(self, bbox_list: list[int]):
         """Convierte lista Python → string JSON seguro"""
@@ -43,4 +44,8 @@ class BallEventModel(Base):
             "y": self.y,
             "z": self.z,
             "owner_id": self.owner_id,
+            "track_id": self.track_id,
+            "bbox": self.get_bbox(),
+            "x_transformed": self.x_transformed,
+            "y_transformed": self.y_transformed
         }

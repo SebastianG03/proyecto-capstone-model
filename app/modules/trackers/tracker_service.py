@@ -37,7 +37,7 @@ class TrackerService(TrackerServiceBase):
         else:
             print("Procesando un solo frame...")
             # Un solo frame — mantenemos frame_num = 0 si no se especifica
-            self.process_frame(frames, 0, db)
+            self.process_frame(frame=frames, db=db, frame_num=frame_num)
 
 
     def get_tracker(self, key: str):

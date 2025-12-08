@@ -110,15 +110,12 @@ class PlayerTracker(Tracker):
                 "z": 0.0
             }
 
-            existing = None
-            try:
-                existing = tracks_collection.get_record_for_frame(track_id=track_id, frame_index=int(frame_num))
-            except Exception:
-                existing = None
+            print(f"[PlayerTracker] Buscando jugador {track_id} frame {frame_num}")
+            existing = tracks_collection.get_record_for_frame(track_id=track_id, frame_index=int(frame_num))
 
             try:
                 if existing:
-                    tracks_collection.patch(existing.id, payload)
+                    tracks_collection.patch(int(f'{existing.id}'), payload)
                 else:
                     tracks_collection.post(payload)
             except Exception as e:
