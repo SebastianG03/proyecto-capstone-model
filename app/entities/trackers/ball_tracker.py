@@ -22,6 +22,7 @@ class BallTracker(Tracker):
         df: float = 1.0):
         super().__init__(model)
         self.kf = self._create_kf(df)
+        self.bbox = []
         self.age = 0
         self.max_age = max_age
         self.gate = gate  # chi2 2-dof 95%
@@ -44,7 +45,8 @@ class BallTracker(Tracker):
         kf.R *= 9  # observación
         kf.Q[2:, 2:] *= 0.1  # velocidad
         kf.x = np.array([0., 0., 0., 0.])  # se inicializa en primera detección
-        kf.P *= 100
+        kf.P = np.eye(4) * 100.0
+        kf.R = np.eye(2) * 9.0
         return kf
     
     @override
@@ -65,10 +67,18 @@ class BallTracker(Tracker):
         detection_supervision,
         db: Session
     ):
-        ball = self._extract_ball(detection_with_tracks, cls_names_inv)
-        self._update_kf(ball, frame_num)
-        self._persist_state(frame_num, db)
-        logger.debug(f"[BallTracker] frame {frame_num} owner={self.owner_id}")
+        try:
+            ball_coordinates = self._extract_ball(detection_with_tracks, cls_names_inv)
+            print(f"[BallTracker] ball_coordinates: {ball_coordinates}")
+            self._update_kf(ball_coordinates, frame_num)
+            print(f"[BallTracker] Kalman state: {self.kf.x}")
+            self._persist_state(frame_num, db)
+            print(f"[BallTracker] Estado persistido en DB para frame {frame_num}")
+            logger.debug(f"[BallTracker] frame {frame_num} owner={self.owner_id}")
+        except Exception as e:
+            logger.exception(f"[BallTracker] Error en get_object_tracks frame {frame_num}: {e}")
+            print(f"[BallTracker] Error en get_object_tracks frame {frame_num}: {e}")
+            raise e
         
     def _extract_ball(
         self,
@@ -93,14 +103,16 @@ class BallTracker(Tracker):
                 print("[BallTracker] Ningún balón detectado")
                 return None
             print("[BallTracker] Extrayendo bbox del balón")
-            bbox = xyxy[mask][0].tolist()
+            bbox = list(map(float, xyxy[mask][0]))
+            self.bbox = bbox
+            print(f"[BallTracker] Bbox del balón: {bbox}")
             print("[BallTracker] Extrayendo centro del balón")
             cx, cy = self._bbox_to_center(bbox)
             print(f"[BallTracker] Centro del balón: ({cx}, {cy})")
-            return cx, cy
+            return (cx, cy)
         except Exception as e:
             print(f"[BallTracker] Error extrayendo balón: {e}")
-            return None
+            raise e
 
     def _update_kf(
         self,
@@ -108,9 +120,20 @@ class BallTracker(Tracker):
         frame_number: int):
         if ball_coordinates is not None:
             z = np.array(ball_coordinates)
-            # Gate de Mahalanobis
+            
+            if np.allclose(self.kf.x, 0):
+                self.kf.x = np.array([z[0], z[1], 0., 0.])
+            
             y, S = self.kf.y, self.kf.S
-            d2 = float(y.T @ np.linalg.inv(S) @ y)
+            det = np.linalg.det(S)
+            
+            if det < 1e-6:
+                logger.warning("Matriz S casi singular, saltando actualización")
+                S_inv = np.linalg.pinv(S)
+            else:
+                S_inv = np.linalg.inv(S)
+            
+            d2 = float(y.T @ S_inv @ y)
             if d2 < self.gate:
                 self.kf.update(z)
                 self.age = 0
@@ -124,12 +147,13 @@ class BallTracker(Tracker):
     def get_ball_state(self) -> Optional[Dict[str, Any]]:
         if self.age > self.max_age:
             return None
-        x, y = self.kf.x[:2]
+        x, y = self.kf.x
         return {
             "x": float(x),
             "y": float(y),
             "vx": float(self.kf.x[2]),
             "vy": float(self.kf.x[3]),
+            "bbox": self.bbox,
             "owner_id": self.owner_id,
             "possession_time": self.possession_time,
             "last_seen_frame": self.last_seen_frame
@@ -140,6 +164,7 @@ class BallTracker(Tracker):
         if state is None:
             return
         tracks_collection = TrackCollectionBall(db)
+        print("Actual state to persist: ", state)
         payload = {
             "frame_index": frame_number,
             "x": state["x"],
@@ -147,18 +172,21 @@ class BallTracker(Tracker):
             "z": 0.0,
             "vx": state["vx"],
             "vy": state["vy"],
-            "bbox": json.dumps([]),  # no usamos bbox filtrada por ahora
+            "bbox": json.dumps(state["bbox"]),
             "owner_id": state["owner_id"],
             "track_id": 0
         }
         existing = tracks_collection.get_record_for_frame(track_id=0, frame_index=frame_number)
         try:
             if existing:
+                print("Updating existing ball record: ", existing.id)
                 tracks_collection.patch(int(f'{existing.id}'), payload)
             else:
+                print("Creating new ball record: ", payload)
                 tracks_collection.post(payload)
         except Exception as e:
             logger.exception(f"DB error frame {frame_number}: {e}")
+            raise e
 
     # @override
     # def get_object_tracks(

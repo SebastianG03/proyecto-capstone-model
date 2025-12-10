@@ -10,7 +10,7 @@ from xml.sax import handler
 
 from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer 
 from app.entities.models import BallEventModel, PlayerStateModel
-from app.modules.camera_movement_estimator import \
+from app.modules.camera import \
     CameraMovementEstimator
 from app.modules.player_ball_assigner import \
     PlayerBallAssigner
@@ -287,17 +287,16 @@ def process_frame(
             # 6. ASIGNACIÓN DEL BALÓN A UN JUGADOR
             # -------------------------------------------------------
             players = player_records.get_all()
-            team_ball_control = []
-            
             if ball_frames is not None or len(ball_frames) > 0:
-                team_ball_control = assign_ball_to_player(
+                assign_ball_to_player(
                     ball_records=ball_frames,
                     players=players,
+                    camera_estimator=camera_movement_estimator,
                     team_assigner=team_assigner,
                     player_assigner=player_assigner,
-                    team_ball_control=team_ball_control,
                     db=db,
                     frame_index=frame_num,
+                    dt=dt,
                     frame=frame,
                 )
 
@@ -412,9 +411,10 @@ def process_tracks_and_position(
 def assign_ball_to_player(
     ball_records: List[BallEventModel],
     players: List[PlayerStateModel],
+    camera_estimator: CameraMovementEstimator,
     team_assigner: TeamAssigner,
     player_assigner: PlayerBallAssigner,
-    team_ball_control: List[int],
+    dt: float,
     frame_index: int,
     db: Session,
     frame: MatLike
@@ -426,19 +426,16 @@ def assign_ball_to_player(
         for ball_track in ball_records:
             # FRAME SIN BALÓN
             if not ball_track:
-                last = team_ball_control[-1] if team_ball_control else -1
-                team_ball_control.append(last)
                 print("No hay balón en este frame, asignación por defecto.")
                 continue
 
             # Solo un balón por frame
             print("Obteniendo detalle del balón...")
             ball_bbox = ball_track.get_bbox()
+            ball_dict = ball_track.to_dict() 
             print(f"Bbox del balón: {ball_bbox}, numero de elementos en bbox: {len(ball_bbox) if ball_bbox else 'N/A'}")
             print("Bbox data type: ", type(ball_bbox))
             if ball_bbox is None:
-                last = team_ball_control[-1] if team_ball_control else -1
-                team_ball_control.append(last)
                 print("No hay balón en este frame, asignación por defecto.")
                 continue
 
@@ -446,15 +443,21 @@ def assign_ball_to_player(
             # ASIGNACIÓN A JUGADOR
             # -----------------------------
             print("Asignando balón a jugador...")
+            ball_velocity = (ball_dict.get("vx", 0.0), ball_dict.get("vy", 0.0))
             assigned_player_id = player_assigner.assign_ball_to_player(
                 players=players,
-                ball_bbox=ball_bbox
+                ball_bbox=ball_bbox,
+                ball_event=ball_track,
+                db=db,
+                dt=dt,
+                ball_velocity=ball_velocity,
+                frame_number=frame_index,
+                scale=camera_estimator.get_current_scale()
             )
+            print(f"Jugador asignado ID (track_id): {assigned_player_id}")
 
             if assigned_player_id == -1:
                 print("No hay jugador asignado, asignación por defecto.")
-                last = team_ball_control[-1] if team_ball_control else -1
-                team_ball_control.append(last)
                 continue
 
             # Ubicar el jugador asignado en ese frame real
@@ -467,8 +470,6 @@ def assign_ball_to_player(
 
             if not player:
                 print("Jugador no encontrado, asignación por defecto.")
-                last = team_ball_control[-1] if team_ball_control else -1
-                team_ball_control.append(last)
                 continue
 
             # Marcar posesión
@@ -482,10 +483,8 @@ def assign_ball_to_player(
             print("Obteniendo equipo del jugador...")
             team = team_assigner.get_player_team(frame, player)
             print(f"Equipo del jugador: {team}")
-            team_ball_control.append(team if team is not None else -1)
             print("Posesión marcada.")
         print("Asignación de balón completada.")
-        return team_ball_control
     except Exception as e:
         print(f"Error en asignación de balón: {e}")
         raise e

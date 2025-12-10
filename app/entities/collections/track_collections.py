@@ -21,7 +21,7 @@ class TrackCollectionPlayer(RecordCollectionBase):
         """
         try:
             item = (self.db.query(PlayerStateModel)
-                     .filter(PlayerStateModel.track_id == track_id)
+                     .filter(PlayerStateModel.player_id == track_id)
                      .filter(PlayerStateModel.frame_index == frame_index)).first()
             return item
         except Exception as e:

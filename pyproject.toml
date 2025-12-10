@@ -13,6 +13,7 @@ dependencies = [
     "filterpy>=1.4.5",
     "flake8>=7.3.0",
     "isort>=6.0.1",
+    "keras-models>=0.0.7",
     "matplotlib>=3.10.3",
     "mplsoccer>=1.5.1",
     "numpy>1.25.2",
@@ -25,6 +26,7 @@ dependencies = [
     "sqlalchemy>=2.0.44",
     "supervision>=0.26.1",
     "tenacity>=9.1.2",
+    "tensorflow>=2.20.0",
     "torchmetrics>=1.8.0",
     "ultralytics>=8.3.170",
 ]

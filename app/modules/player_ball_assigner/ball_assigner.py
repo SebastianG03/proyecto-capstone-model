@@ -48,8 +48,8 @@ class BallAssigner:
 
     def update(
         self,
-        ball_state: Optional[BallEventModel],
-        players: List[PlayerStateModel],
+        ball_state: Optional[Dict[str, Any]],
+        players: List[Dict[str, Any]],
         db: Session,
         dt: float,
         frame_number: int,
@@ -82,27 +82,28 @@ class BallAssigner:
         if ball_state is None:
             return self._release_owner(frame_number)
 
-        bx, by = float(f'{ball_state.x}'), float(f'{ball_state.y}')
+        bx, by = float(f'{ball_state["x"]}'), float(f'{ball_state["y"]}')
         d_max = self.max_distance_threshold * scale
 
         candidates = []
         for player in players:
-            px, py = float(f'{player.x}'), float(f'{player.y}')
+            px, py = player["x"], player["y"]
             dist = np.hypot(px - bx, py - by)
             if dist > d_max:
                 continue
 
-            speed = float(f'{player.speed}' or 0.0)
-            angle_diff = 0.0
-            if speed > 0.5:
-                dir_ball = math.atan2(by - py, bx - px)
+            # ángulo jugador → balón
+            vx, vy = player.get("vx", 0.0), player.get("vy", 0.0)
+            if np.hypot(vx, vy) > 0.1:  # solo si tiene velocidad
+                dir_player = np.arctan2(vy, vx)
+                dir_ball = np.arctan2(by - py, bx - px)
+                angle_diff = abs((dir_player - dir_ball + np.pi) % (2 * np.pi) - np.pi)
+            else:
+                angle_diff = 0.0  # sin info de dirección, no penalizar
 
-                if dist < d_max * 0.5:
-                    angle_diff = 0.0
-                else:
-                    angle_diff = abs(dir_ball)
             if angle_diff <= self.angle_threshold:
-                candidates.append((int(f'{player.player_id}'), dist, angle_diff))
+                candidates.append((player["player_id"], dist, angle_diff))
+
 
         if not candidates:
             return self._release_owner(frame_number)
@@ -128,14 +129,14 @@ class BallAssigner:
         # 6. Actualizar modelos IN-PLACE
         # ------------------------------------------------------------------
         for player in players:
-            is_owner = (int(f'{player.player_id}') == self.current_owner)
+            is_owner = (player["player_id"] == self.current_owner)
             payload = {
                 "has_ball": is_owner,
                 "ball_owner_id": self.current_owner if is_owner else None
             }
             if is_owner:
-                payload["ball_possession_time"] = (float(f'{player.ball_possession_time}') or 0.0) + dt
-            player_record.patch(int(f'{player.player_id}'), payload)
+                payload["ball_possession_time"] = (float(f'{player["ball_possession_time"]}') or 0.0) + dt
+            player_record.patch(player["id"], payload)
 
         return self.current_owner
 
@@ -185,7 +186,7 @@ class BallAssigner:
         self,
         candidates: List[Tuple],
         best_id: int,
-        players: List[PlayerStateModel],
+        players: List[Dict[str, Any]],
         ball_location: Tuple[float, float],
         max_distance: float,
         frame_number: int) -> Optional[int]:
@@ -221,11 +222,11 @@ class BallAssigner:
         if self.owner_since_frame != -1 and current_frames > self.cooldown_frames:
             return None
 
-        owner = next((p for p in players if int(f'{p.player_id}') == self.current_owner), None)
+        owner = next((p for p in players if p["player_id"] == self.current_owner), None)
 
         if not owner: return None
         
-        dist_owner = np.hypot(float(f'{owner.x}') - bx, float(f'{owner.y}') - by)
+        dist_owner = np.hypot(owner["x"] - bx, owner["y"] - by)
         if dist_owner <= max_distance * 1.5:
             return self.current_owner
         return None
