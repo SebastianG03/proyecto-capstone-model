@@ -68,6 +68,7 @@ class BallTracker(Tracker):
         db: Session
     ):
         try:
+            print("[BallTracker] ball get_object_tracks llamado frame ", frame_num)
             ball_coordinates = self._extract_ball(detection_with_tracks, cls_names_inv)
             print(f"[BallTracker] ball_coordinates: {ball_coordinates}")
             self._update_kf(ball_coordinates, frame_num)
@@ -86,11 +87,18 @@ class BallTracker(Tracker):
         cls_names_inv: dict):
         try:
             print("[BallTracker] extract_ball llamado")
-            if detections is None:
+            if detections is None or len(detections) == 0:
+                print("[BallTracker] No hay detecciones")
                 return None
+
             print("[BallTracker] extract_ball procesando detecciones")
+            print(f"[BallTracker] Clases disponibles: {cls_names_inv}")
+            print(f"[BallTracker] Detecciones - class_ids: {detections.class_id}")
+            print(f"[BallTracker] Detecciones - confianza: {detections.confidence}")
             xyxy = np.asarray(getattr(detections, "xyxy", None))
+            print(f"[BallTracker] xyxy: {xyxy}")
             class_ids = np.asarray(getattr(detections, "class_id", None))
+            print(f"[BallTracker] class_ids: {class_ids}")
             if xyxy is None or class_ids is None:
                 print("[BallTracker] No xyxy o class_ids")
                 return None
@@ -99,16 +107,26 @@ class BallTracker(Tracker):
             if ball_idx is None:
                 return None
             mask = class_ids == ball_idx
+            print(f"[BallTracker] mask: {mask} resultante de class ids {class_ids} y ball idx{ball_idx}")
             if not mask.any():
-                print("[BallTracker] Ningún balón detectado")
-                return None
-            print("[BallTracker] Extrayendo bbox del balón")
-            bbox = list(map(float, xyxy[mask][0]))
-            self.bbox = bbox
-            print(f"[BallTracker] Bbox del balón: {bbox}")
-            print("[BallTracker] Extrayendo centro del balón")
-            cx, cy = self._bbox_to_center(bbox)
-            print(f"[BallTracker] Centro del balón: ({cx}, {cy})")
+                print("[BallTracker] Ningún balón detectado, intentando recuperar posición")
+                return self._recover_ball_position(detections, cls_names_inv)
+            
+            valid_indices = np.where(mask)[0]
+            conf = detections.confidence
+            if len(valid_indices) > 1 and conf is not None:
+                confidences = conf[mask]
+                best_idx = np.argmax(confidences)
+                best_detection_idx = valid_indices[best_idx]
+            else:
+                best_detection_idx = valid_indices[0]
+            
+            # Extraer coordenadas
+            bbox = detections.xyxy[best_detection_idx]
+            self.bbox = list(map(float, bbox))
+            cx, cy = self._bbox_to_center(self.bbox)
+            
+            print(f"[BallTracker] Balón recuperado: centro=({cx}, {cy})")
             return (cx, cy)
         except Exception as e:
             print(f"[BallTracker] Error extrayendo balón: {e}")
@@ -147,7 +165,8 @@ class BallTracker(Tracker):
     def get_ball_state(self) -> Optional[Dict[str, Any]]:
         if self.age > self.max_age:
             return None
-        x, y = self.kf.x
+        logger.debug(f"Recuperando Kalman {self.kf.x} con longitud {len(self.kf.x)}")
+        x, y, _, _ = self.kf.x
         return {
             "x": float(x),
             "y": float(y),
@@ -158,6 +177,57 @@ class BallTracker(Tracker):
             "possession_time": self.possession_time,
             "last_seen_frame": self.last_seen_frame
         }
+    
+    def _recover_ball_position(
+    self,
+    detections: sv.Detections,
+    cls_names_inv: dict) -> Optional[tuple[float, float]]:
+        """
+        Recupera la posición del balón usando heurísticas cuando no es detectado.
+        """
+        print("[BallTracker] Aplicando estrategias de recuperación...")
+        
+        # Estrategia 1: Usar la última posición conocida si el Kalman filter es confiable
+        if self.age < self.max_age and not np.allclose(self.kf.x[:2], 0):
+            predicted_x, predicted_y = self.kf.x[0], self.kf.x[1]
+            print(f"[BallTracker] Usando predicción de Kalman: ({predicted_x}, {predicted_y})")
+            return (predicted_x, predicted_y)
+        
+        # Estrategia 2: Buscar en regiones cercanas a jugadores (el balón suele estar cerca)
+        player_idx = cls_names_inv.get("player")
+        if player_idx is not None:
+            player_mask = detections.class_id == player_idx
+            if player_mask.any():
+                player_bboxes = detections.xyxy[player_mask]
+                player_centers = []
+                for bbox in player_bboxes:
+                    cx, cy = self._bbox_to_center(bbox)
+                    player_centers.append((cx, cy))
+                
+                # Estimar posición del balón basándose en jugadores
+                if player_centers:
+                    # Simple heurística: balón cerca del centro del campo
+                    avg_x = np.mean([c[0] for c in player_centers])
+                    avg_y = np.mean([c[1] for c in player_centers])
+                    
+                    # Ajustar posición basándose en la dirección del juego
+                    if len(player_centers) > 1:
+                        # Usar vector de movimiento de jugadores
+                        direction_x = player_centers[-1][0] - player_centers[0][0]
+                        direction_y = player_centers[-1][1] - player_centers[0][1]
+                        
+                        # Posicionar balón ligeramente adelante del promedio
+                        ball_x = avg_x + direction_x * 0.2
+                        ball_y = avg_y + direction_y * 0.2
+                    else:
+                        ball_x, ball_y = avg_x, avg_y
+                    
+                    print(f"[BallTracker] Balón estimado por posición de jugadores: ({ball_x}, {ball_y})")
+                    return (float(ball_x), float(ball_y))
+        
+        # Estrategia 3: No se puede recuperar
+        print("[BallTracker] No se pudo recuperar la posición del balón")
+        return None
 
     def _persist_state(self, frame_number: int, db: Session):
         state = self.get_ball_state()
@@ -176,90 +246,9 @@ class BallTracker(Tracker):
             "owner_id": state["owner_id"],
             "track_id": 0
         }
-        existing = tracks_collection.get_record_for_frame(track_id=0, frame_index=frame_number)
         try:
-            if existing:
-                print("Updating existing ball record: ", existing.id)
-                tracks_collection.patch(int(f'{existing.id}'), payload)
-            else:
-                print("Creating new ball record: ", payload)
-                tracks_collection.post(payload)
+            print("Creating new ball record: ", payload)
+            tracks_collection.post(payload)
         except Exception as e:
-            logger.exception(f"DB error frame {frame_number}: {e}")
+            logger.exception(f"Error al guardar el balon en frame {frame_number}: {e}")
             raise e
-
-    # @override
-    # def get_object_tracks(
-    #     self,
-    #     detection_with_tracks,
-    #     cls_names_inv,
-    #     frame_num,
-    #     detection_supervision,
-    #     db: Session
-    # ):
-        
-    #     print(f"[BallTracker] get_object_tracks llamado frame {frame_num}")
-    #     tracks_collection = TrackCollectionBall(db)
-    #     print(f"[BallTracker] START get_tracker_tracks frame {frame_num}")
-
-    #     if detection_with_tracks is None:
-    #         print(f"[BallTracker] No detecciones para frame {frame_num}")
-    #         return
-
-    #     xyxy = getattr(detection_with_tracks, "xyxy", None)
-    #     class_ids = getattr(detection_with_tracks, "class_id", None)
-    #     if xyxy is None or class_ids is None:
-    #         print(f"[BallTracker] No xyxy o class_ids para frame {frame_num}")
-    #         return
-
-    #     # normalizar arrays
-    #     try:
-    #         class_ids_arr = np.asarray(class_ids)
-    #         xyxy_arr = np.asarray(xyxy)
-    #     except Exception:
-    #         class_ids_arr = class_ids
-    #         xyxy_arr = xyxy
-
-    #     ball_class_idx = cls_names_inv.get("ball")
-    #     if ball_class_idx is None:
-    #         print(f"[BallTracker] No hay clase 'ball' en frame {frame_num}")
-    #         return
-
-    #     try:
-    #         mask = class_ids_arr == ball_class_idx
-    #     except Exception:
-    #         mask = (class_ids_arr == ball_class_idx)
-
-    #     if not getattr(mask, "any", lambda: False)():
-    #         print(f"[BallTracker] Ningún balón detectado en frame {frame_num}")
-    #         return
-
-    #     try:
-    #         ball_bbox = xyxy_arr[mask][0].tolist()
-    #     except Exception:
-    #         print(f"[BallTracker] Error extrayendo bbox en frame {frame_num}")
-    #         return
-
-    #     cx, cy = self._bbox_to_center(ball_bbox)
-    #     print("Bbox balón ", ball_bbox, f"centro ({cx}, {cy})")
-    #     payload = {
-    #         "frame_index": int(frame_num),
-    #         "x": float(cx),
-    #         "y": float(cy),
-    #         "z": 0.0,
-    #         "bbox": json.dumps(ball_bbox),
-    #         "owner_id": None,
-    #         "track_id": 0
-    #     }
-
-    #     existing = tracks_collection.get_record_for_frame(track_id=0, frame_index=int(frame_num))
-
-    #     try:
-    #         if existing:
-    #             tracks_collection.patch(int(f'{existing.id}'), payload)
-    #         else:
-    #             tracks_collection.post(payload)
-    #     except Exception as e:
-    #         print(f"[BallTracker] DB error frame {frame_num}: {e}")
-
-    #     print(f"[BallTracker] END get_tracker_tracks frame {frame_num}")

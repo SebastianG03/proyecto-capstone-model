@@ -3,7 +3,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer
-
+from app.logger import debug_logger, error_logger, info_logger
 
 class ViewTransformer:
     """
@@ -82,12 +82,12 @@ class ViewTransformer:
         ball_collection = TrackCollectionBall(db)
         player_collection = TrackCollectionPlayer(db)
 
-        print("Transformando posiciones en registros...")
+        info_logger.info("Transformando posiciones en registros...")
         try:
             ball_records = ball_collection.get_all()
             player_records = player_collection.get_all()
             if len(ball_records) == 0 and len(player_records) == 0:
-                print("No hay registros para transformar.")
+                info_logger.info("No hay registros para transformar.")
                 return
             
             if len(ball_records) == len(player_records):
@@ -99,9 +99,9 @@ class ViewTransformer:
             if len(player_records) > 0:
                 self.transform_player_records(player_records, db)
                 return
-            print("No hay registros para transformar.")
+            info_logger.info("No hay registros para transformar.")
         except Exception as e:
-            print(f"Error transformando posiciones en records: {e}")
+            error_logger.error(f"Error transformando posiciones en records: {e}")
             raise e
 
     def transform_ball_records(self, ball_records, db: Session):
@@ -116,7 +116,7 @@ class ViewTransformer:
             for br in ball_records:
                 self.calculate_ball_transformed_position(br, db)
         except Exception as e:
-            print(f"Error transformando posiciones en ball records: {e}")
+            error_logger.error(f"Error transformando posiciones en ball records: {e}")
             raise e
 
     def transform_player_records(self, player_records, db: Session):
@@ -131,7 +131,7 @@ class ViewTransformer:
             for pr in player_records:
                 self.calculate_player_transformed_position(pr, db)
         except Exception as e:
-            print(f"Error transformando posiciones en player records: {e}")
+            error_logger.error(f"Error transformando posiciones en player records: {e}")
             raise e
 
     def transform_both_records(self, ball_records, player_records, db: Session):
@@ -148,7 +148,7 @@ class ViewTransformer:
                 self.calculate_ball_transformed_position(br, db)
                 self.calculate_player_transformed_position(pr, db)
         except Exception as e:
-            print(f"Error transformando posiciones en records: {e}")
+            error_logger.error(f"Error transformando posiciones en records: {e}")
             raise e
         
     def calculate_ball_transformed_position(self, ball_record, db: Session):
@@ -177,7 +177,7 @@ class ViewTransformer:
             )
             return
         except Exception as e:
-            print(f"Error calculando posición transformada del balón: {e}")
+            error_logger.error(f"Error calculando posición transformada del balón: {e}")
             raise e
 
     def calculate_player_transformed_position(self, player_record, db: Session):
@@ -206,5 +206,5 @@ class ViewTransformer:
             )
             return
         except Exception as e:
-            print(f"Error calculando posición transformada del jugador: {e}")
+            error_logger.error(f"Error calculando posición transformada del jugador: {e}")
             raise e

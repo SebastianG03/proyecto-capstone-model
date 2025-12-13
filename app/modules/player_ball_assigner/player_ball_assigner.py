@@ -34,62 +34,69 @@ class PlayerBallAssigner():
     def assign_ball_to_player(
         self,
         players: List[PlayerStateModel],
-        ball_bbox: List[float],
-        ball_event: Union[BallEventModel, None],
+        ball_event: BallEventModel,
         db: Session,
-        ball_velocity: tuple,
         dt: float = 1,
         scale: float = 1.0,
         frame_number: int = 0
         ) -> int:
         try:
+            print("[PlayerBallAssigner] assign_ball_to_player llamado en frame ", frame_number)
             player_record = TrackCollectionPlayer(db)
             # 1. Crear ball_state (compatibilidad con Kalman)
+            ball_bbox = ball_event.get_bbox() if ball_event else None
             if not ball_bbox or len(ball_bbox) < 4:
+                print("[PlayerBallAssigner] No hay bbox de balón válido.")
                 return -1
-            cx, cy = get_center_of_bbox(ball_bbox)
-            ball_state: Dict[str, Any] = {
-                "x": cx,
-                "y": cy,
-                "vx": ball_velocity[0],
-                "vy": ball_velocity[1]
-            }
 
+            print(f"[PlayerBallAssigner] ball_bbox: {ball_bbox}")
 
             # 3. Convertir PlayerStateModel → dict ligero
             players_dict = [
                 {
-                    "id": p.id,
-                    "player_id": p.player_id,
-                    "x": p.x,
-                    "y": p.y,
-                    "vx": p.speed * np.cos(np.deg2rad(45)),  # aprox
-                    "vy": p.speed * np.sin(np.deg2rad(45))
+                    "id": int(f'{p.id}'),
+                    "player_id": int(f'{p.player_id}'),
+                    "x": float(f'{p.x}'),
+                    "y": float(f'{p.y}'),
+                    "ball_possession_time": float(f'{p.ball_possession_time}') if p.ball_possession_time is not None else 0.0,
+                    "vx": float(f'{p.speed}') * np.cos(np.deg2rad(45)),
+                    "vy": float(f'{p.speed}') * np.sin(np.deg2rad(45))
                 }
-                for p in players
+                for p in players if p.x is not None and p.y is not None and p.speed is not None
             ]
+            ball_state = {
+                "x": float(f'{ball_event.x}'),
+                "y": float(f'{ball_event.y}'),
+                "vx": float(f'{ball_event.vx}'),
+                "vy": float(f'{ball_event.vy}')
+            }
 
             # 4. Asignación con lógica nueva
-            frame = players[0].frame_index if players else 0
+            print(f"[PlayerBallAssigner] players_dict: {players_dict}")
+            print("Actualizando instancia de BallAssigner...")
             owner_id = self.ball_assigner.update(
-                ball_state=ball_event,
+                ball_state=ball_state,
                 players=players_dict,
                 db=db,
                 dt=dt,
                 scale=scale,
                 frame_number=frame_number
             )
+            print(f"[PlayerBallAssigner] owner_id determinado: {owner_id}")
 
             for player in players:
+                print(f"[PlayerBallAssigner] player: {player}")
                 is_owner = (int(f'{player.player_id}') == owner_id)
                 payload = {
                     "has_ball": is_owner,
                     "ball_owner_id": owner_id if is_owner else None
                 }
                 if is_owner:
+                    print("[PlayerBallAssigner] Jugador es dueño del balón.")
                     # acumular tiempo (fps puede venir de config)
                     payload["ball_possession_time"] = (float(f'{player.ball_possession_time}') or 0.0) + dt
             # 6. Devolver mismo tipo que antes
+                print(f"[PlayerBallAssigner] payload: {payload}")
                 player_record.patch(int(f'{player.id}'), payload)
                 print(f"[PlayerBallAssigner] Player {player.player_id} updated: {payload}")
             return owner_id if owner_id is not None else -1

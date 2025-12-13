@@ -1,11 +1,14 @@
+import json
 import logging
 from collections import deque, defaultdict
 from typing import Dict, List, Optional, Tuple
 from cv2.typing import MatLike
+from sqlalchemy.orm import Session
 
 import cv2
 import numpy as np
 from sklearn.cluster import MiniBatchKMeans
+from app.entities.collections.track_collections import TrackCollectionPlayer
 from app.entities.models.PlayerState import PlayerStateModel
 from app.entities.utils.singleton import Singleton
 
@@ -178,61 +181,76 @@ class TeamAssigner(metaclass=Singleton):
             self.bootstrap_colors(frame, players)
         # Aquí podrías actualizar cache, smoothing o predicciones por frame
 
-    def get_player_team(self, frame: MatLike, record: PlayerStateModel) -> int:
+    def get_player_team(self, frame: MatLike, record: PlayerStateModel, db: Session):
         """
         Devuelve 1, 2 o -1. Utiliza smoothing temporal por jugador
         para evitar saltos por recortes malos.
         """
         try:
         # obtener identificador estable: player_id preferible, si no id
-            player_id = getattr(record, "player_id", None) or getattr(record, "id", None)
+            print("Getting player team for record:", record)
+            player_id = getattr(record, "id", None)
             if player_id is None:
-                return -1
+                print("Record has no id attribute.")
+                return -1, None
 
-            # si no hay bbox válido → fallback a la historia previa
-            if not hasattr(record, "get_bbox"):
-                return -1
             bbox = record.get_bbox()
+            print(f"[Team Assigner] Player ID: {player_id}, BBox: {bbox}")
             if not bbox:
                 # usar majority vote de historial
                 hist = self.player_team_history[player_id]
                 if len(hist) == 0:
-                    return -1
+                    return -1, None
                 # devolver la decisión cacheada o mayoría
                 return self._majority_vote(hist)
 
             # si no hay modelo entrenado → -1 (o podrías intentar bootstrap local)
+            print("Checking KMeans model...")
             if self.kmeans is None:
                 logging.debug("KMeans not initialized yet when predicting team.")
-                return -1
+                return -1, None
 
-            # extraer color (rápido)
+            print("Extracting player color...")
             color = self.extract_player_color(frame, bbox)
             if color is None:
                 # no color -> fallback
+                print("No pudo extraer color del jugador, usando historial.")
                 hist = self.player_team_history[player_id]
                 if len(hist) == 0:
-                    return -1
+                    return -1, None
                 return self._majority_vote(hist)
 
+            print("Prediciendo equipo desde color...")
             pred = self._predict_from_color(color)
             if pred is None:
-                return -1
+                logging.debug("No pudo predecir equipo desde color.")
+                return -1, None
 
             # update smoothing history
             self.player_team_history[player_id].append(pred)
 
             # si la historia tiene suficiente longitud, usar mayoría; sino usar pred
+            print("Usando smoothing history...")
             hist = self.player_team_history[player_id]
             team = self._majority_vote(hist) if len(hist) >= max(3, self.smoothing_window // 2) else pred
 
             # actualizar cache y devolver
+            print("Actualizando cache...")
             self.player_team_cache[player_id] = int(team)
+            player_record = TrackCollectionPlayer(db)
+            player_record.patch(
+                player_id,
+                {
+                    "team": team,
+                    "color":  json.dumps(self.team_colors.get(team)) if team in self.team_colors else None
+                }
+            )
+            print(f"Equipo asignado al jugador {player_id}: {team}")
             return int(team)
         except Exception as e:
             logging.debug(f"Error predicting team: {e}")
             print(f"Error predicting team: {e}")
-            return -1
+            return -1, None
 
     # ---------------------------
     # Utilidades

@@ -3,6 +3,7 @@ import numpy as np
 from scipy.signal import savgol_filter
 from sqlalchemy.orm import Session
 
+from app.entities.collections.track_collections import TrackCollectionPlayer
 from app.entities.models.PlayerState import PlayerStateModel
 from app.entities.utils.singleton import Singleton
 from app.modules.services.bbox_processor_service import measure_scalar_distance
@@ -82,7 +83,6 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         track_id: int,
         track: PlayerStateModel,
         db: Session,
-        model_class,
     ) -> None:
         """
         Procesa un track de un jugador en un frame.
@@ -174,20 +174,20 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             print(f"¿Está sprintando el track {track_id}? {'Sí' if is_sprint else 'No'}")
 
             # Persistencia
-            obj = model_class(
-                player_id=track_id,
-                frame_index=frame_num,
-                x_smoothed=float(smoothed_pos[0]),
-                y_smoothed=float(smoothed_pos[1]),
-                speed=float(smooth_speed_kmh),
-                acceleration=float(acceleration),
-                incremental_distance=float(incremental_dist),
-                distance=float(total_distance),
-                is_sprint=is_sprint,
-            )
+            data_updated = {
+                "player_id": track_id,
+                "frame_index": frame_num,
+                "x_smoothed": float(smoothed_pos[0]),
+                "y_smoothed": float(smoothed_pos[1]),
+                "speed": float(smooth_speed_kmh),
+                "acceleration": float(acceleration),
+                "incremental_distance": float(incremental_dist),
+                "distance": float(total_distance),
+                "is_sprint": is_sprint,
+            }
 
-            db.add(obj)
-            db.commit()
+            player_collection = TrackCollectionPlayer(db)
+            player_collection.patch(int(f'{track.id}'), data_updated)
         except Exception as e:
             print(f"Error procesando track {track}: {e}")
             raise e

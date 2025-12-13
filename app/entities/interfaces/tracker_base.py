@@ -14,9 +14,13 @@ class Tracker():
         self.model = model
     
     def _bbox_to_center(self, bbox: list) -> tuple[float, float]:
+        print("[Tracker] Convirtiendo bbox a centro...")
         x1, y1, x2, y2 = bbox
+        print(f"[Tracker] Bbox recibida: {bbox}, coordenadas extraídas: x1={x1}, y1={y1}, x2={x2}, y2={y2}")
         cx = float((x1 + x2) / 2.0)
+        print(f"[Tracker] cx={cx}")
         cy = float((y1 + y2) / 2.0)
+        print(f"[Tracker] cy={cy}")
         return cx, cy
 
     def get_object_tracks(

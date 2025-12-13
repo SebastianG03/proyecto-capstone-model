@@ -1,41 +1,21 @@
 import json
-from multiprocessing import process
-from pathlib import Path
 import time
 import tracemalloc
-import logging
-from logging.handlers import RotatingFileHandler
 from typing import List
-from xml.sax import handler
 
-from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer 
-from app.entities.models import BallEventModel, PlayerStateModel
-from app.modules.camera import \
-    CameraMovementEstimator
-from app.modules.player_ball_assigner import \
-    PlayerBallAssigner
 from app.modules.plotting import generate_diagrams
-from app.modules.services import read_video, extract_player_images
+from app.modules.services import read_video
 from app.modules.services.r2_download import R2Downloader
 from app.modules.services.verify_model import prepare_model
-from app.modules.services.video_processing_service import extract_player_images
-from app.modules.speed_and_distance_estimator import SpeedAndDistanceEstimator
-from app.modules.team_assigner import TeamAssigner
-from app.entities.trackers import ( 
-    BallTracker)
+
 from app.modules.trackers import TrackerService
-from app.modules.view_transformer import ViewTransformer
 from sqlalchemy.orm import Session
 
+from app.tasks.analysis.process import process_frame
+from app.tasks.analysis_tools import AnalysisTools
 from app.tasks.upload_heatmaps import upload_heatmaps_for_extracted_players
-from app.utils.routes import INPUT_VIDEOS_DIR, MODELS_DIR, OUTPUT_IMAGES_DIR, OUTPUT_REPORTS_DIR
-from cv2.typing import MatLike
-
-logger = logging.getLogger("app_logger")
-logger.setLevel(logging.INFO)
-handler = RotatingFileHandler("info.log", maxBytes=1000000, backupCount=5)
-handler.setLevel(logging.INFO)
-logger.addHandler(handler)
+from app.utils.routes import INPUT_VIDEOS_DIR, MODELS_DIR, OUTPUT_REPORTS_DIR
+from app.logger import *
 
 async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     try:
@@ -45,7 +25,7 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
         
         if not export_data_file.exists():
             export_data_file.touch()
-            print("Volviendo a intentar: Archivo de reporteria creado en: ", export_data_file.as_posix())
+            info_logger.info("Volviendo a intentar: Archivo de reporteria creado en: ", export_data_file.as_posix())
     except Exception as e:
         print(f"Error creando archivo de reporteria: {e}")
         raise e
@@ -86,7 +66,7 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     video_stream = read_video(download_path.as_posix())
     images_per_player = 3
     if not video_stream:
-        print("Error: No frames read from video")
+        error_logger.error("Error: No frames read from video")
         return
 
     try:
@@ -94,37 +74,23 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
             model_path.as_posix()
         )
 
-        # -----------------------------
-        # COLECCIONES
-        # -----------------------------
-        player_records = TrackCollectionPlayer(db)
-        player_records.orm_model = PlayerStateModel
+        try:
+            first_batch = next(video_stream)
+            first_frame, _ = first_batch[0]
+        except StopIteration:
+            error_logger.error("Error: Video is empty")
+            return
 
-        ball_records = TrackCollectionBall(db)
-        ball_records.orm_model = BallEventModel
-
-        view_transformer = ViewTransformer()
-        speed_and_distance = SpeedAndDistanceEstimator()
-        team_assigner = TeamAssigner()
-        player_assigner = PlayerBallAssigner()
+        if not first_frame.any():
+            error_logger.error("Error: First frame is empty")
+            return
+        info_logger.info("Inicializando servicios de análisis...")
+        tools = AnalysisTools()
+        tools.start(db=db, first_frame=first_frame)
     except Exception as e:
-        print(f"Error initializing services: {e}")
+        error_logger.error(f"Error initializing services: {e}")
         raise e
 
-     # -----------------------------
-     # FRAME INICIAL PARA CAMERA MOVEMENT
-     # -----------------------------
-    try:
-        first_batch = next(video_stream)
-        first_frame, _ = first_batch[0]
-    except StopIteration:
-        print("Error: Video is empty")
-        return
-
-    if not first_frame.any():
-        print("Error: First frame is empty")
-        return
-    camera_movement_estimator = CameraMovementEstimator(first_frame)
     frame_num = 0
 
     # ==========================================================================
@@ -138,14 +104,14 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
         if not batch or len(batch) == 0:
             empty_batches += 1
             if empty_batches >= max_empty_batches:
-                print("Múltiples batches vacíos consecutivos, finalizando procesamiento.")
+                debug_logger.debug("Múltiples batches vacíos consecutivos, finalizando procesamiento.")
                 break
             continue
 
         empty_batches = 0
 
         if time.time() - start_time > max_processing_time:
-            print("Tiempo de procesamiento excedido, finalizando.")
+            debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
             break
 
         print(f"\n{'#'*60}\nProcesando batch de {len(batch)} frames...\n{'#'*60}\n")
@@ -154,13 +120,7 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
             frame_num=frame_num,
             db=db,
             tracker=tracker,
-            player_records=player_records,
-            ball_records=ball_records,
-            camera_movement_estimator=camera_movement_estimator,
-            view_transformer=view_transformer,
-            speed_and_distance=speed_and_distance,
-            team_assigner=team_assigner,
-            player_assigner=player_assigner,
+            tools=tools,
             metrics=metrics,
             images_per_player=images_per_player,
             saved_player_ids=saved_player_ids,
@@ -168,323 +128,35 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
         )
         saved_player_ids.extend(updated_ids)
         metrics.update(updated_metrics)
-        print(f"Batch procesado. Frames hasta ahora: {frame_num + len(batch)}")
+        info_logger.info(f"Batch procesado. Frames hasta ahora: {frame_num + len(batch)}")
 
-    print(f"Jugadores con imágenes extraídas {saved_player_ids}")
+    info_logger.info(f"Jugadores con imágenes extraídas {saved_player_ids}")
 
     generate_diagrams(db)
-    print("Diagramas generados.")
+    info_logger.info("Diagramas generados.")
     await upload_heatmaps_for_extracted_players(db=db, match_id=match_id, extracted_player_ids=set(saved_player_ids))
-    print("Heatmaps subidos.")
+    info_logger.info("Heatmaps subidos.")
 
     total_time = time.time() - start_time
+    metrics.update(
+        {
+            "Frames por minuto": (frame_num / total_time) * 60,
+            "Frames procesados": frame_num,
+            "Tiempo total de procesamiento": f"{total_time/60:.2f} minutos"
+            })
 
     print("\n" + "=" * 50)
     print("        RESUMEN FINAL DEL PROCESAMIENTO")
     print("=" * 50)
     print(f"Tiempo total: {total_time/60:.2f} min")
     # print(f"Memoria máxima usada: {max(metrics['memory_usage']):.2f} MB")
-    print(f"Frames balón detectado: {metrics['ball_detection']['detected']}")
-    print(f"Frames balón interpolado: {metrics['ball_detection']['interpolated']}")
+    info_logger.info(f"Frames balón detectado: {metrics['ball_detection']['detected']}")
+    info_logger.info(f"Frames balón interpolado: {metrics['ball_detection']['interpolated']}")
+    metrics_file = OUTPUT_REPORTS_DIR / f"metrics_match_{match_id}.json"
+    info_logger.info(f"Escribiendo métricas a {metrics_file.as_posix()}...")
+    metrics_file.parent.mkdir(parents=True, exist_ok=True)
+    metrics_file.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
+    info_logger.info("Métricas escritas.")
 
 
-def process_frame(
-    frame_num: int,
-    video_batch: List[tuple[MatLike, float]],
-    db: Session,
-    tracker: TrackerService,
-    player_records: TrackCollectionPlayer,
-    ball_records: TrackCollectionBall,
-    camera_movement_estimator: CameraMovementEstimator,
-    view_transformer: ViewTransformer,
-    speed_and_distance: SpeedAndDistanceEstimator,
-    team_assigner: TeamAssigner,
-    player_assigner: PlayerBallAssigner,
-    metrics: dict,
-    images_per_player: int,
-    saved_player_ids: List[int],
-    export_data_file: Path
-): 
-    player_image_counts: dict = {}
-    last_frame_taken: dict = {}
-    try:
-        for frame, dt in video_batch:
-            frame_num += 1
-            print(f"\n{'='*20} Procesando frame {frame_num} {'='*20}\n")
-            print(f"Tiempo desde último frame: {dt:.4f} segundos")
-            # -------------------------------------------------------
-            # 1. Estimar movimiento de cámara
-            # -------------------------------------------------------
-            print("Estimando movimiento de cámara...")
-            camera_movement = camera_movement_estimator.update(frame)
 
-            # -------------------------------------------------------
-            # 2. TRACKING DE OBJETOS (jugadores + balón)
-            # -------------------------------------------------------
-            print("Procesando frame en el tracker...")
-            process_tracks_and_position(
-                player_records=player_records,
-                ball_records=ball_records,
-                frame=frame,
-                frame_num=frame_num,
-                db=db,
-                tracker=tracker,
-                camera_movement_estimator=camera_movement_estimator,
-                camera_movement=camera_movement,
-                view_transformer=view_transformer
-            )
-                 
-            
-            # -------------------------------------------------------
-            # 3. VALIDAR QUE EL TRACKER DE BALÓN ES CORRECTO
-            # -------------------------------------------------------
-            print("Obteniendo tracker de balón...")
-            ball_tracker = tracker.get_tracker("ball")
-            print("Tracker de balón obtenido.")
-            if not isinstance(ball_tracker, BallTracker):
-                raise TypeError("Retrieved tracker is not an instance of BallTracker")
-
-            # -------------------------------------------------------
-            # 4. MÉTRICAS DE DETECCIÓN DEL BALÓN
-            # -------------------------------------------------------
-            print("Obteniendo métricas de detección del balón...")
-            ball_frames = ball_records.get_all()
-            print(f"Total frames con balón: {len(ball_frames)}")
-            if len(ball_frames) == 1:                
-                metrics["ball_detection"] = {
-                    "detected": 1,
-                    "interpolated": 0,
-                }
-            elif len(ball_frames) > 1:
-                detected = sum(1 for t in ball_frames if t.get_bbox() is not None)
-                print(f"Frames con balón detectado: {detected}")
-                total = len(ball_frames)
-                print(f"Total frames: {total}")
-
-                metrics["ball_detection"] = {
-                    "detected": detected,
-                    "interpolated": total - detected,
-                }
-
-            # -------------------------------------------------------
-            # 5. ESTIMAR VELOCIDAD/DISTANCIA DEL ÚLTIMO JUGADOR
-            # -------------------------------------------------------
-            print("Estimando velocidad y distancia del último jugador...")
-            last_player = player_records.get_last(db)
-            print("Último jugador obtenido: ", last_player is not None)
-            if last_player:
-                print(f"Último jugador: {last_player.player_id}")
-                speed_and_distance.process_track(
-                    frame_num=frame_num,
-                    track_id=int(f'{last_player.player_id}'),
-                    track=last_player,
-                    db=db,
-                    model_class=PlayerStateModel,
-                )
-                print("Velocidad y distancia estimadas.")
-
-            # -------------------------------------------------------
-            # 6. ASIGNACIÓN DEL BALÓN A UN JUGADOR
-            # -------------------------------------------------------
-            players = player_records.get_all()
-            if ball_frames is not None or len(ball_frames) > 0:
-                assign_ball_to_player(
-                    ball_records=ball_frames,
-                    players=players,
-                    camera_estimator=camera_movement_estimator,
-                    team_assigner=team_assigner,
-                    player_assigner=player_assigner,
-                    db=db,
-                    frame_index=frame_num,
-                    dt=dt,
-                    frame=frame,
-                )
-
-            print("Extrayendo imagenes de jugadores.")
-
-            last_player = player_records.get_last(db)
-            print("Último jugador obtenido: ", last_player is not None)
-            if not last_player:
-                print("No hay jugador para extraer imagenes, saltandom frame...")
-                continue
-            updated_player_image_counts, updated_last_frame_taken, saved_player_id = extract_player_images(
-            frame=frame,
-            frame_index=frame_num,
-            player=last_player,
-            images_per_player=images_per_player,
-            output_folder=OUTPUT_IMAGES_DIR.as_posix(),
-            player_image_counts=player_image_counts,
-            last_frame_taken=last_frame_taken,
-            )
-            player_image_counts.update(updated_player_image_counts)
-            last_frame_taken.update(updated_last_frame_taken)
-            if saved_player_id is not None:
-                saved_player_ids.append(saved_player_id)
-            print("Imágenes extraídas.")
-            
-            if all(count >= images_per_player for count in player_image_counts.values()):
-                last_frame_taken.clear() 
-            
-            print(f"Frame procesado. {frame_num}")
-
-            print("Datos de exportación del frame:")
-            export_data = {
-                "frame_num": frame_num,
-                "frame_time": f'{dt:.4f} seconds',
-                "metrics": metrics,
-                "player_image_counts": player_image_counts,
-                "last_frame_taken": last_frame_taken,
-                "saved_player_ids": saved_player_ids,
-                "player_data": last_player.to_dict() if last_player else None,
-                "ball_data": ball_frames[-1].to_dict() if ball_frames else None
-            }
-            print(export_data)
-            logger.info(f"Frame {frame_num} data: {export_data}")
-            
-            print("Escribiendo datos de exportación al archivo...")
-            chars = export_data_file.open("a", encoding="utf-8").write(json.dumps(export_data) + "\n")
-            print("Datos escritos al archivo. Escrito: ", chars, " caracteres.")
-
-            snapshot = tracemalloc.take_snapshot()
-            total_mem = sum(stat.size for stat in snapshot.statistics("lineno")) / (1024 * 1024)
-
-            if not metrics["memory_usage"]:
-                metrics["memory_usage"].append(total_mem)
-        return frame_num, saved_player_ids, metrics
-    except Exception as e:
-        print(f"Error procesando frame {frame_num}: {e}")
-        raise e
-    finally:
-        for hdlr in logger.handlers[:]:
-            hdlr.flush()
-            hdlr.close()
-            logger.removeHandler(hdlr)
-            
-def process_tracks_and_position(
-    player_records: TrackCollectionPlayer,
-    ball_records: TrackCollectionBall,
-    frame: MatLike,
-    frame_num: int,
-    db: Session,
-    tracker: TrackerService,
-    camera_movement_estimator: CameraMovementEstimator,
-    camera_movement: tuple[float, float],
-    view_transformer: ViewTransformer
-):
-    print("Procesando tracks y posiciones...")
-    try:
-        for collection in (player_records, ball_records):
-            print("Obteniendo tracks de objetos...")
-            scale = camera_movement_estimator.get_current_scale()
-            tracker.get_object_tracks(frame, frame_num, db)
-
-            print("Actualizando último track...")
-            last_track = collection.get_last(db)
-            if last_track is None:
-                print("No hay track para actualizar, saltando...")
-                continue
-            print(f"Último track ID: {last_track.to_dict().get('player_id', None)}")
-
-            # Calcular centro y bbox inmediatamente
-            print("Añadiendo posición al track...")
-            tracker.add_position_to_track(db, last_track)
-            print(f"Posición añadida: ({last_track.x}, {last_track.y})")
-
-            # Aplicar compensación de movimiento de cámara
-            print("Ajustando posiciones según movimiento de cámara...")
-            camera_movement_estimator.add_adjust_positions_to_tracks(
-                db=db,
-                camera_movement_per_frame=camera_movement,
-                scale=scale,
-                track=last_track
-            )
-            print("Posiciones ajustadas.")
-
-            # Homografía al campo 2D
-            print("Aplicando transformación de vista...")
-            view_transformer.add_transformed_positions(db)
-    except Exception as e:
-        print(f"Error procesando tracks y posiciones: {e}")
-        raise e
-    print("Procesamiento de tracks y posiciones completado.")
-
-def assign_ball_to_player(
-    ball_records: List[BallEventModel],
-    players: List[PlayerStateModel],
-    camera_estimator: CameraMovementEstimator,
-    team_assigner: TeamAssigner,
-    player_assigner: PlayerBallAssigner,
-    dt: float,
-    frame_index: int,
-    db: Session,
-    frame: MatLike
-):
-    try:
-        print("Asignando balón a jugador...")
-        player_records = TrackCollectionPlayer(db)
-        print("Colección de jugadores obtenida. Longitud actual: ", len(players))
-        for ball_track in ball_records:
-            # FRAME SIN BALÓN
-            if not ball_track:
-                print("No hay balón en este frame, asignación por defecto.")
-                continue
-
-            # Solo un balón por frame
-            print("Obteniendo detalle del balón...")
-            ball_bbox = ball_track.get_bbox()
-            ball_dict = ball_track.to_dict() 
-            print(f"Bbox del balón: {ball_bbox}, numero de elementos en bbox: {len(ball_bbox) if ball_bbox else 'N/A'}")
-            print("Bbox data type: ", type(ball_bbox))
-            if ball_bbox is None:
-                print("No hay balón en este frame, asignación por defecto.")
-                continue
-
-            # -----------------------------
-            # ASIGNACIÓN A JUGADOR
-            # -----------------------------
-            print("Asignando balón a jugador...")
-            ball_velocity = (ball_dict.get("vx", 0.0), ball_dict.get("vy", 0.0))
-            assigned_player_id = player_assigner.assign_ball_to_player(
-                players=players,
-                ball_bbox=ball_bbox,
-                ball_event=ball_track,
-                db=db,
-                dt=dt,
-                ball_velocity=ball_velocity,
-                frame_number=frame_index,
-                scale=camera_estimator.get_current_scale()
-            )
-            print(f"Jugador asignado ID (track_id): {assigned_player_id}")
-
-            if assigned_player_id == -1:
-                print("No hay jugador asignado, asignación por defecto.")
-                continue
-
-            # Ubicar el jugador asignado en ese frame real
-            print(f"Jugador asignado: {assigned_player_id}")
-            player = player_records.get_record_for_frame(
-                assigned_player_id,
-                frame_index
-            )
-            print(f"Jugador encontrado en frame: {player is not None}")
-
-            if not player:
-                print("Jugador no encontrado, asignación por defecto.")
-                continue
-
-            # Marcar posesión
-            print("Marcando posesión del jugador...")
-            player_records.patch(
-                player.to_dict()["id"],
-                {"has_ball": True}
-            )
-
-            # Obtener equipo
-            print("Obteniendo equipo del jugador...")
-            team = team_assigner.get_player_team(frame, player)
-            print(f"Equipo del jugador: {team}")
-            print("Posesión marcada.")
-        print("Asignación de balón completada.")
-    except Exception as e:
-        print(f"Error en asignación de balón: {e}")
-        raise e

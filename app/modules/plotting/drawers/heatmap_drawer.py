@@ -1,4 +1,5 @@
 from pathlib import Path
+from re import I
 from typing import Dict, Set, List
 import numpy as np
 import matplotlib.pyplot as plt
@@ -45,11 +46,15 @@ class HeatmapDrawer(Diagram):
 
     def _is_valid_for_kde(self, df: pd.DataFrame) -> bool:
         if df.empty or df.shape[0] < 5:
+            print("DataFrame vacío o con menos de 5 filas.")
             return False
         if df["x"].min() == df["x"].max():
+            print("DataFrame vacío o con menos de 5 filas.")
             return False
         if df["z"].min() == df["z"].max():
+            print("DataFrame vacío o con menos de 5 filas.")
             return False
+        print("DataFrame válido para KDE.")
         return True
 
     def _draw_pitch(self):
@@ -69,48 +74,14 @@ class HeatmapDrawer(Diagram):
     # ---------------------------------------------------------
     # BD EXTRACTION
     # ---------------------------------------------------------
-    def _fetch_players(self) -> Set[int]:
-        rows = self.db.query(PlayerStateModel.player_id).distinct().all()
+    def _fetch_players(self) -> List[int]:
+        rows = (self.db
+                .query(PlayerStateModel)
+                .where(PlayerStateModel.player_id.isnot(None))
+                .group_by(PlayerStateModel.player_id)
+                .all())
 
-        player_ids: Set[int] = set()
-
-        for r in rows:
-            value = None
-
-            # Caso 1: SQLAlchemy Row (2.x)
-            if isinstance(r, Row):
-                # Acceso seguro usando atributo
-                try:
-                    value = r.player_id
-                except:
-                    # fallback: acceso posicional
-                    try:
-                        value = r[0]
-                    except:
-                        pass
-
-            # Caso 2: tuple/list
-            elif isinstance(r, (tuple, list)):
-                if len(r) > 0:
-                    value = r[0]
-
-            # Caso 3: valor directo
-            else:
-                value = r
-
-            # Asegurar que value es int
-            if isinstance(value, int):
-                player_ids.add(value)
-            else:
-                # Intentar conversión segura sin estresar Pylance
-                try:
-                    if value is None:
-                        continue
-                    player_ids.add(int(value))
-                except:
-                    pass
-
-        return player_ids
+        return [int(f'{row.player_id}') for row in rows]
 
     def _fetch_player_states(self, player_id: int) -> List[PlayerStateModel]:
         return (
@@ -146,24 +117,38 @@ class HeatmapDrawer(Diagram):
         print(f"{len(player_ids)} jugadores encontrados.")
 
         for pid in player_ids:
+            print(f"Procesando jugador {pid}...")
             states = self._fetch_player_states(pid)
             if not states:
+                print(f"No se encontraron estados para el jugador {pid}, saltando.")
                 continue
 
             # Guardar puntos (opcional, puedes comentar si ya tienes puntos)
+            print(f"Guardando HeatmapPointModel para player {pid}...")
             try:
+                print(f"Guardando HeatmapPointModel para player {pid}...")
                 self._save_heatmap_points(states)
             except Exception as e:
                 print(f"Advertencia guardando HeatmapPointModel para player {pid}: {e}")
 
             # Convertir a DataFrame y separar por equipo
+            print(f"Convertir a DataFrame y separar por equipo para player {pid}...")
             rows = [{"x": st.x, "z": st.z, "team": (st.team or "").lower()} for st in states]
+            print(f"DataFrame creado con {len(rows)} filas.")
             df = pd.DataFrame(rows)
+            print(f"DataFrame creado con {df.shape[0]} filas.")
             if df.empty:
+                print(f"DataFrame vacío para el jugador {pid}, saltando.")
                 continue
 
+            print(f"Separando datos por equipo para player {pid}...")
             home_df = df[df["team"] == "home"][["x", "z"]]
             rival_df = df[df["team"] == "rival"][["x", "z"]]
+            print(f"Datos separados: {home_df.shape[0]} filas HOME, {rival_df.shape[0]} filas RIVAL.")
+            
+            if home_df.empty or rival_df.empty:
+                print(f"No hay suficientes datos para el jugador {pid}, saltando.")
+                continue
 
             self._draw_player_heatmaps(pid, home_df, rival_df)
 
@@ -204,5 +189,6 @@ class HeatmapDrawer(Diagram):
             )
             fig.savefig(self.players_path / f"heatmap_player_{pid}.png",
                         dpi=300, bbox_inches="tight")
+            print(f"Heatmap guardado en {self.players_path / f'heatmap_player_{pid}.png'}.")
 
         plt.close(fig)

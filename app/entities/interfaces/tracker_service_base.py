@@ -1,4 +1,5 @@
 # tracker_service_base.py
+from asyncio.log import logger
 import logging
 from typing import List, Union, TYPE_CHECKING
 
@@ -101,7 +102,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         """
         print("Detectando en frames...")
         return self.model.predict(frames, conf=conf)
-    
+
     def process_frame(
         self,
         frame: MatLike,
@@ -171,9 +172,10 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             bbox = track.get_bbox()
             print("Bbox del track ", track.id, ": ", bbox)
 
-            if bbox is None:
+            if bbox is None or len(bbox) == 0:
                 return
 
+            print(f"Adding position to track {track.id} with bbox {bbox} de tipo {type(track)}")
             position = get_center_of_bbox(bbox)
             if isinstance(track, PlayerStateModel):
                 self.add_to_player(db, track, position)

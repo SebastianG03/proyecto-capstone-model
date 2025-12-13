@@ -5,6 +5,7 @@ from app.utils.routes import ensure_directories
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("\033c", end="")
     print("🚀 API iniciada")
     ensure_directories()
     yield

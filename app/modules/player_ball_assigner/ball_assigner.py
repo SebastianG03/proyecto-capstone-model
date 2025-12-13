@@ -60,9 +60,9 @@ class BallAssigner:
 
         Parameters
         ----------
-        ball_state : Optional[BallEventModel]
+        ball_state : Optional[Dict[str, Any]]
             The current state of the ball.
-        players : List[PlayerStateModel]
+        players : List[Dict[str, Any]]
             List of players currently in the scene.
         db : Session
             The current database session.
@@ -82,12 +82,15 @@ class BallAssigner:
         if ball_state is None:
             return self._release_owner(frame_number)
 
-        bx, by = float(f'{ball_state["x"]}'), float(f'{ball_state["y"]}')
+        bx, by = float(ball_state["x"]), float(ball_state["y"])
         d_max = self.max_distance_threshold * scale
 
         candidates = []
         for player in players:
             px, py = player["x"], player["y"]
+            print("[BallAssigner] Player", player["player_id"], "at", (px, py))
+            if not px or not py:
+                continue
             dist = np.hypot(px - bx, py - by)
             if dist > d_max:
                 continue
@@ -135,7 +138,7 @@ class BallAssigner:
                 "ball_owner_id": self.current_owner if is_owner else None
             }
             if is_owner:
-                payload["ball_possession_time"] = (float(f'{player["ball_possession_time"]}') or 0.0) + dt
+                payload.update({"ball_possession_time": (float(f'{player["ball_possession_time"]}') or 0.0) + dt})
             player_record.patch(player["id"], payload)
 
         return self.current_owner
