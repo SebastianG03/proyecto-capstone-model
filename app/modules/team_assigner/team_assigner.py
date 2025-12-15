@@ -130,7 +130,7 @@ class TeamAssigner(metaclass=Singleton):
         players: lista de PlayerStateModel con bbox disponible
         """
         if self.kmeans is not None:
-            return True  # ya entrenado
+            return True
 
         samples = []
         for player in players:
@@ -189,6 +189,7 @@ class TeamAssigner(metaclass=Singleton):
         try:
         # obtener identificador estable: player_id preferible, si no id
             debug_logger.debug("[Team Assigner] Getting player team for record:", record)
+            player_record = TrackCollectionPlayer(db)
             player_id = getattr(record, "id", None)
             if player_id is None:
                 debug_logger.debug("[Team Assigner] Record has no id attribute.")
@@ -209,7 +210,8 @@ class TeamAssigner(metaclass=Singleton):
             debug_logger.debug("[Team Assigner] Checking KMeans model...")
             if self.kmeans is None:
                 debug_logger.debug("[Team Assigner] KMeans not initialized yet when predicting team.")
-                return -1, None
+                self.assign_team_colors(frame=frame, players=player_record.get_all())
+                debug_logger.debug("[Team Assigner] After attempting bootstrap.")
 
             debug_logger.debug("[Team Assigner] Extracting player color...")
             color = self.extract_player_color(frame, bbox)
@@ -242,7 +244,6 @@ class TeamAssigner(metaclass=Singleton):
             # actualizar cache y devolver
             debug_logger.debug("[Team Assigner] Actualizando cache...")
             self.player_team_cache[player_id] = int(team)
-            player_record = TrackCollectionPlayer(db)
             player_record.patch(
                 player_id,
                 {

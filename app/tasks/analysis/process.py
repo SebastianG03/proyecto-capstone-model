@@ -139,6 +139,7 @@ def process_frame(
                 info_logger.info("[ProcessRun] Paso 6: Asignando equipo...")
                 last_player = tools.player_records.get_last(db)
                 if last_player:
+                    tools.team_assigner.assign_team_colors(frame=frame, players=tools.player_records.get_all())
                     tools.team_assigner.get_player_team(frame, last_player, db)
                 else:
                     info_logger.info("[ProcessRun] No hay último jugador para asignar equipo.")
