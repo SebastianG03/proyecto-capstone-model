@@ -3,6 +3,8 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer
+from app.entities.models.BallState import BallEventModel
+from app.entities.models.PlayerState import PlayerStateModel
 from app.logger import debug_logger, error_logger, info_logger
 
 class ViewTransformer:
@@ -84,74 +86,27 @@ class ViewTransformer:
 
         info_logger.info("Transformando posiciones en registros...")
         try:
-            ball_records = ball_collection.get_all()
-            player_records = player_collection.get_all()
-            if len(ball_records) == 0 and len(player_records) == 0:
-                info_logger.info("No hay registros para transformar.")
-                return
-            
-            if len(ball_records) == len(player_records):
-                self.transform_both_records(ball_records, player_records, db)
-                return    
-            if len(ball_records) > 0:
-                self.transform_ball_records(ball_records, db)
-                return
-            if len(player_records) > 0:
-                self.transform_player_records(player_records, db)
-                return
+            ball_register = ball_collection.get_last(db=db)
+            player_register = player_collection.get_last(db=db)
+            info_logger.info(f"[ViewTransformer] Registro de balon extraido: {ball_register is not None}")
+            info_logger.info(f"[ViewTransformer] Registro de jugador extraido: {player_register is not None}")
+            if not ball_register:
+                debug_logger.debug("Calculando posición transformada del balon...")
+                self.calculate_ball_transformed_position(ball_record=ball_register, db=db)
+            if not player_register:
+                debug_logger.debug("Calculando posición transformada del jugador...")
+                self.calculate_player_transformed_position(player_record=player_register, db=db)
+
             info_logger.info("No hay registros para transformar.")
         except Exception as e:
             error_logger.error(f"Error transformando posiciones en records: {e}")
             raise e
 
-    def transform_ball_records(self, ball_records, db: Session):
-        """
-        Transforma la posición del balón en cada frame.
-        Luego de una lista de objetos BallEventModel y una sesión de base de datos,
-        transforma la posición del balón en cada frame.
-        Si hay un error al momento de transformar, se imprime el error y se
-        lanza una excepción.
-        """
-        try:
-            for br in ball_records:
-                self.calculate_ball_transformed_position(br, db)
-        except Exception as e:
-            error_logger.error(f"Error transformando posiciones en ball records: {e}")
-            raise e
 
-    def transform_player_records(self, player_records, db: Session):
-        """
-        Transforma la posición de los jugadores en cada frame.
-        Luego de una lista de objetos PlayerStateModel y una sesión de base de datos,
-        transforma la posición de los jugadores en cada frame.
-        Si hay un error al momento de transformar, se imprime el error y se
-        lanza una excepción.
-        """
-        try:
-            for pr in player_records:
-                self.calculate_player_transformed_position(pr, db)
-        except Exception as e:
-            error_logger.error(f"Error transformando posiciones en player records: {e}")
-            raise e
-
-    def transform_both_records(self, ball_records, player_records, db: Session):
-        """
-        Transforma la posición del balón y los jugadores en cada frame.
-        Luego de una lista de objetos BallEventModel y una lista de objetos PlayerStateModel
-        y una sesión de base de datos, transforma la posición del balón y los
-        jugadores en cada frame.
-        Si hay un error al momento de transformar, se imprime el error y se
-        lanza una excepción.
-        """
-        try:
-            for br, pr in zip(ball_records, player_records):
-                self.calculate_ball_transformed_position(br, db)
-                self.calculate_player_transformed_position(pr, db)
-        except Exception as e:
-            error_logger.error(f"Error transformando posiciones en records: {e}")
-            raise e
-        
-    def calculate_ball_transformed_position(self, ball_record, db: Session):
+    def calculate_ball_transformed_position(
+        self,
+        ball_record: BallEventModel,
+        db: Session):
         """
         Calcula la posición transformada del balón en un registro.
         
@@ -163,15 +118,19 @@ class ViewTransformer:
         lanza una excepción.
         """
         try:
-            bx, by = ball_record.x, ball_record.y
+            bx, by = float(f'{ball_record.x}'), float(f'{ball_record.y}')
+            debug_logger.debug(f"[ViewTransformer] Posición del balón para transformación: x={bx}, y={by}")
             if bx is None and by is None:
+                debug_logger.debug("[ViewTransformer] No hay posiciones para transformar.")
                 return
             ball_transformed = self.transform_point(np.array([bx, by], dtype=np.float32))
+            debug_logger.debug(f"[ViewTransformer] Posición transformada del balón: {ball_transformed}")
             if ball_transformed is None:
+                debug_logger.debug("[ViewTransformer] Posición transformada es None, fuera del campo.")
                 return
             ball_collection = TrackCollectionBall(db)
             ball_collection.patch(
-                ball_record.id,
+                int(f'{ball_record.id}'),
                 {"x_transformed": ball_transformed[0],
                 "y_transformed": ball_transformed[1]}
             )
@@ -180,7 +139,10 @@ class ViewTransformer:
             error_logger.error(f"Error calculando posición transformada del balón: {e}")
             raise e
 
-    def calculate_player_transformed_position(self, player_record, db: Session):
+    def calculate_player_transformed_position(
+        self,
+        player_record: PlayerStateModel,
+        db: Session):
         """
         Calcula la posición transformada del jugador en un registro.
         
@@ -192,15 +154,19 @@ class ViewTransformer:
         lanza una excepción.
         """
         try:
-            px, py = player_record.x, player_record.y
+            px, py = float(f'{player_record.x}'), float(f'{player_record.y}')
+            debug_logger.debug(f"[ViewTransformer] Posición del jugador para transformación: x={px}, y={py}")
             if px is None and py is None:
+                debug_logger.debug("[ViewTransformer] No hay posiciones para transformar.")
                 return
             player_transformed = self.transform_point(np.array([px, py], dtype=np.float32))
+            debug_logger.debug(f"[ViewTransformer] Posición transformada del jugador: {player_transformed}")
             if player_transformed is None:
+                debug_logger.debug("[ViewTransformer] Posición transformada es None, fuera del campo.")
                 return
             player_collection = TrackCollectionPlayer(db)
             player_collection.patch(
-                player_record.id,
+                int(f'{player_record.id}'),
                 {"x_transformed": player_transformed[0],
                 "y_transformed": player_transformed[1]}
             )

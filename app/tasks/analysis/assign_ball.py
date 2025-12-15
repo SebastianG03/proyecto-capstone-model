@@ -54,28 +54,6 @@ def assign_ball_to_player(
 
             # Ubicar el jugador asignado en ese frame real
             print(f"Jugador asignado: {assigned_player_id}")
-            # player = player_records.get_record_for_frame(
-            #     assigned_player_id,
-            #     frame_index
-            # )
-            # print(f"Jugador encontrado en frame: {player is not None}")
-
-            # if not player:
-            #     print("Jugador no encontrado, asignación por defecto.")
-            #     continue
-
-            # # Marcar posesión
-            # print("Marcando posesión del jugador...")
-            # player_records.patch(
-            #     player.to_dict()["id"],
-            #     {"has_ball": True}
-            # )
-
-            # # Obtener equipo
-            # print("Obteniendo equipo del jugador...")
-            # team = team_assigner.get_player_team(frame, player)
-            # print(f"Equipo del jugador: {team}")
-            print("Posesión marcada.")
         print("Asignación de balón completada.")
     except Exception as e:
         print(f"Error en asignación de balón: {e}")

@@ -25,7 +25,7 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
         
         if not export_data_file.exists():
             export_data_file.touch()
-            info_logger.info("Volviendo a intentar: Archivo de reporteria creado en: ", export_data_file.as_posix())
+            info_logger.info("Volviendo a intentar: Archivo de reporteria creado en: " + export_data_file.as_posix())
     except Exception as e:
         print(f"Error creando archivo de reporteria: {e}")
         raise e

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.entities.collections.track_collections import TrackCollectionPlayer
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerState import PlayerStateModel
-
+from app.logger import debug_logger
 
 class BallAssigner:
     def __init__(
@@ -122,23 +122,19 @@ class BallAssigner:
             frame_number=frame_number
         )
 
-        # ------------------------------------------------------------------
-        # 5. Cambio oficial de posesión
-        # ------------------------------------------------------------------
         if best_id != self.current_owner:
             self._change_owner(best_id, frame_number)
 
-        # ------------------------------------------------------------------
-        # 6. Actualizar modelos IN-PLACE
-        # ------------------------------------------------------------------
         for player in players:
             is_owner = (player["player_id"] == self.current_owner)
+            debug_logger.debug(f"[BallAssigner] Actual dt value: {dt}")
+            ball_possession_time = float(f'{player["ball_possession_time"]}') + dt or 0.0
             payload = {
                 "has_ball": is_owner,
-                "ball_owner_id": self.current_owner if is_owner else None
+                "ball_owner_id": self.current_owner if is_owner else None,
+                "ball_possession_time": ball_possession_time
             }
-            if is_owner:
-                payload.update({"ball_possession_time": (float(f'{player["ball_possession_time"]}') or 0.0) + dt})
+            debug_logger.debug(f"[BallAssigner] Player {player['player_id']} posee el balón en frame {frame_number} durante {ball_possession_time} segundos.")
             player_record.patch(player["id"], payload)
 
         return self.current_owner

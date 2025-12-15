@@ -1,24 +1,48 @@
-from app.entities.utils.singleton import Singleton
+# app/modules/services/player_number_recognition_service.py
 
+from typing import Dict, List, Optional
+import numpy as np
+from sqlalchemy.orm import Session
+from app.logger import info_logger, error_logger
+from app.modules.camera.number_recognition import NumberRecognition
 
-class PlayerNumberRecognizer(metaclass=Singleton):
-    def __init__(self):
-        pass
+class PlayerNumberRecognitionService:
+    def __init__(self, model_path: str):
+        self.model = NumberRecognition(model_path)
+        self.history: Dict[int, List[int]] = {}  # player_id -> números detectados
 
-    def recognize_player_number(self, player_image) -> int:
-        """
-        Reconoce el número del jugador a partir de su imagen.
+    def _validate_consistency(self, player_id: int, number: int) -> Optional[int]:
+        if player_id not in self.history:
+            self.history[player_id] = []
+        self.history[player_id].append(number)
+        history = self.history[player_id][-10:]
 
-        Parámetros
-        ----------
-        player_image : np.ndarray
-            Imagen del jugador recortada.
+        counts: Dict[int, int] = {}
+        for n in history:
+            counts[n] = counts.get(n, 0) + 1
 
-        Retorna
-        -------
-        int
-            Número reconocido del jugador. Retorna -1 si no se reconoce ningún número.
-        """
-        # Implementación ficticia para ilustrar
-        recognized_number = -1  # Lógica de reconocimiento aquí
-        return recognized_number
+        most_common, freq = max(counts.items(), key=lambda x: x[1])
+        if freq >= 3:
+            return most_common
+        return None
+
+    def update_player_number(
+        self,
+        db: Session,
+        player_id: int,
+        frame_index: int,
+        back_roi: np.ndarray
+    ) -> None:
+        try:
+            number = self.model.predict(back_roi)
+            if number is None:
+                return
+
+            validated = self._validate_consistency(player_id, number)
+            if validated is None:
+                return
+
+            #Update player
+
+        except Exception as e:
+            error_logger.error(f"Error al actualizar número de jugador {player_id}: {e}")

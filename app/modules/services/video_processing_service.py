@@ -7,7 +7,7 @@ from cv2.typing import MatLike
 
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
 from app.entities.models import PlayerStateModel
-
+from app.logger import debug_logger
 
 def read_video(video_path: str, batch_size: int = 16) -> Generator[List[tuple[MatLike, float]]]:
     print(f"Abriendo video para lectura: {video_path}...")
@@ -75,23 +75,23 @@ def extract_player_images(
     :param last_frame_taken: Mapa {player_id: ultimo_frame_guardado}
     """
     try:
-        print(f"Extrayendo imagen de jugador {player.to_dict().get('player_id', None)} en frame {frame_index}...")
+        debug_logger.debug(f"[Extract Player Images] Extrayendo imagen de jugador {player.to_dict().get('player_id', None)} en frame {frame_index}...")
         folder = pathlib.Path(output_folder)
         folder.mkdir(parents=True, exist_ok=True)
 
         if player_image_counts is None:
-            print("Inicializando player_image_counts...")
+            debug_logger.debug("[Extract Player Images] Inicializando player_image_counts...")
             player_image_counts = {}
 
         if last_frame_taken is None:
-            print("Inicializando last_frame_taken...")
+            debug_logger.debug("[Extract Player Images] Inicializando last_frame_taken...")
             last_frame_taken = {}
 
-        print(f"Dimensiones del frame: {frame.shape}")
+        debug_logger.debug(f"[Extract Player Images] Dimensiones del frame: {frame.shape}")
         h, w = frame.shape[:2]
 
         # Procesar solo records del frame actual
-        print("Procesando jugador:", player.to_dict())
+        debug_logger.debug(f"[Extract Player Images] Procesando jugador: {player.to_dict()}")
         record = player.to_dict()
         player_id: int = int(record.get("player_id", -1))
         player_team = record.get("team", "unknown")
@@ -99,23 +99,23 @@ def extract_player_images(
         bbox = player.get_bbox()
         
         if player_id == -1:
-            print("Player ID inválido.")
+            debug_logger.debug("[Extract Player Images] Player ID inválido.")
             return player_image_counts, last_frame_taken, None
 
         if bbox is None or len(bbox) != 4:
-            print("No hay bounding box para el jugador.")
+            debug_logger.debug("[Extract Player Images] No hay bounding box para el jugador.")
             return player_image_counts, last_frame_taken, None
 
         # Máximo por jugador
         count = player_image_counts.get(player_id, 0)
         if count >= images_per_player:
-            print("Máximo de imágenes alcanzado para el jugador.")
+            debug_logger.debug("[Extract Player Images] Máximo de imágenes alcanzado para el jugador.")
             return player_image_counts, last_frame_taken, None
 
         # Saltar frames cercanos
         last_f = last_frame_taken.get(player_id, -frame_skip - 1)
         if frame_index - last_f < frame_skip:
-            print("Saltando frame por frame_skip.")
+            debug_logger.debug("[Extract Player Images] Saltando frame por frame_skip.")
             return player_image_counts, last_frame_taken, None
         
         h, w = frame.shape[:2]
@@ -129,28 +129,28 @@ def extract_player_images(
         y2 = max(0, min(y2, h - 1))
 
         if x2 <= x1 or y2 <= y1:
-            print("Bounding box inválido.")
+            debug_logger.debug("[Extract Player Images] Bounding box inválido.")
             return player_image_counts, last_frame_taken, None
 
         if (x2 - x1) < 10 or (y2 - y1) < 10:
-            print("Bounding box muy pequeño.")
+            debug_logger.debug("[Extract Player Images] Bounding box muy pequeño.")
             return player_image_counts, last_frame_taken, None
         
         torso_y2 = y1 + int((y2 - y1) * 0.6)
         crop = frame[y1:torso_y2, x1:x2]
         
         if crop.size == 0:
-            print("Crop resultó en una imagen vacía.")
+            debug_logger.debug("[Extract Player Images] Crop resultó en una imagen vacía.")
             return player_image_counts, last_frame_taken, None
 
         # Guardar imagen
         filename = folder / f"player_{player_id}_team_{player_team}_color_{player_color}_img_{count+1}_frame_{frame_index}.png"
-        print(f"Guardando imagen en {filename}...")
+        debug_logger.debug(f"[Extract Player Images] Guardando imagen en {filename}...")
         cv2.imwrite(str(filename), crop)
         player_image_counts.update({player_id: count + 1})
         last_frame_taken.update({player_id: frame_index})
 
-        print("Imagen guardada.")
+        debug_logger.debug("[Extract Player Images] Imagen guardada.")
 
         return player_image_counts, last_frame_taken, player_id
     except Exception as e:

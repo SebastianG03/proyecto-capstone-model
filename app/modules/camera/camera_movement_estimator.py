@@ -4,9 +4,9 @@ from cv2.typing import MatLike
 
 from app.entities.models import PlayerStateModel, BallEventModel
 from app.entities.utils import Singleton
+from app.logger import debug_logger, error_logger
 from sqlalchemy.orm import Session
 
-from app.layers.domain import tracks
 
 class CameraMovementEstimator(metaclass=Singleton):
     """
@@ -136,6 +136,7 @@ class CameraMovementEstimator(metaclass=Singleton):
         self,
         camera_movement_per_frame,
         scale: float,
+        pixels_to_meters: float,
         track: PlayerStateModel | BallEventModel,
         db: Session
     ):
@@ -146,50 +147,63 @@ class CameraMovementEstimator(metaclass=Singleton):
             tracks_collection = None
             print(f"Ajustando posición del track {track.id} con movimiento de cámara {camera_movement_per_frame}.")
             dx, dy = camera_movement_per_frame
+            debug_logger.debug(f"[CameraMovementEstimator] Movimiento de cámara por frame: dx={dx}, dy={dy}")
+
             if dx is None or dy is None:
                 print("Movimiento de cámara no definido, no se aplica ajuste.")
                 return
-            print(f"Movimiento de cámara: dx={dx}, dy={dy}")
+
+            #Conversion
+            # dx *= pixels_to_meters
+            # dy *= pixels_to_meters
+            # debug_logger.debug(f"[CameraMovementEstimator] Movimiento de cámara convertido a metros: dx={dx}, dy={dy}")
+            debug_logger.debug(f"[CameraMovementEstimator] Movimiento de cámara: dx={dx}, dy={dy}")
             x, y = track.x, track.y
+
             if x is None or y is None:
                 print("Posición del track no definida, no se aplica ajuste.")
                 return
-            print(f"Posición actual: x={x}, y={y}")
+
+            #Conversion
+            debug_logger.debug(f"[CameraMovementEstimator] Posición actual: x={x}, y={y}")
+            # x *= pixels_to_meters
+            # y *= pixels_to_meters
+            # debug_logger.debug(f"[CameraMovementEstimator] Posición del track convertida a metros: x={x}, y={y}")
 
             adjusted_x = (x - dx) / scale
             adjusted_y = (y - dy) / scale
             position_adjusted = (adjusted_x, adjusted_y)
-            
 
             if position_adjusted[0] is None or position_adjusted[1] is None:
-                print("Posición ajustada inválida, no se aplica ajuste.")
+                debug_logger.debug("Posición ajustada inválida, no se aplica ajuste.")
                 return
-            print(f"Posición ajustada: x={position_adjusted[0]}, y={position_adjusted[1]}")
+            debug_logger.debug(f"Posición ajustada: x={position_adjusted[0]}, y={position_adjusted[1]}")
 
             updates = {
                 "x": position_adjusted[0],
                 "y": position_adjusted[1]
             }
-            print(f"Actualizaciones a aplicar: {updates}")
+            debug_logger.debug(f"Actualizaciones a aplicar: {updates}")
 
             if isinstance(track, PlayerStateModel):
                 from app.entities.collections import TrackCollectionPlayer
-                print("Usando TrackCollectionPlayer para actualizar el track.")
+                debug_logger.debug("Usando TrackCollectionPlayer para actualizar el track.")
                 tracks_collection = TrackCollectionPlayer(db)
             elif isinstance(track, BallEventModel):
                 from app.entities.collections import TrackCollectionBall
-                print("Usando TrackCollectionBall para actualizar el track.")
+                debug_logger.debug("Usando TrackCollectionBall para actualizar el track.")
                 tracks_collection = TrackCollectionBall(db)
             
             if not tracks_collection:
+                error_logger.error("tracks_collection no pudo ser determinado.")
                 raise ValueError("tracks_collection no pudo ser determinado.")
             
-            print(f"Actualizando track ID {track.id} en la base de datos.")
+            debug_logger.debug(f"Actualizando track ID {track.id} en la base de datos.")
             tracks_collection.patch(int(f'{track.id}'), updates)
-            print(f"Posición del track {track.id} ajustada correctamente.")
+            debug_logger.debug(f"Posición del track {track.id} ajustada correctamente.")
 
         except Exception as e:
-            print(f"Error ajustando posición del track {track}: {e}")
+            debug_logger.debug(f"Error ajustando posición del track {track}: {e}")
             raise e
 
     # -------------------------------------------------------------

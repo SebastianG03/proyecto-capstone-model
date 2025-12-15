@@ -11,7 +11,8 @@ def process_tracks_and_position(
     db: Session,
     tracker: TrackerService,
     tools: AnalysisTools,
-    camera_movement: tuple[float, float]
+    camera_movement: tuple[float, float],
+    pixels_to_meters: float,
 ):
     print("Procesando tracks y posiciones...")
     try:
@@ -37,6 +38,7 @@ def process_tracks_and_position(
             tools.camera_movement_estimator.add_adjust_positions_to_tracks(
                 db=db,
                 camera_movement_per_frame=camera_movement,
+                pixels_to_meters=pixels_to_meters,
                 scale=scale,
                 track=last_track
             )

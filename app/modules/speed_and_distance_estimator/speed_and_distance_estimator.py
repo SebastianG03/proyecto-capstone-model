@@ -7,9 +7,7 @@ from app.entities.collections.track_collections import TrackCollectionPlayer
 from app.entities.models.PlayerState import PlayerStateModel
 from app.entities.utils.singleton import Singleton
 from app.modules.services.bbox_processor_service import measure_scalar_distance
-
-# Modelo SQLAlchemy final donde guardarás cada frame:
-# from app.db.models import PlayerPerformanceFrame
+from app.logger import *
 
 
 class SpeedAndDistanceEstimator(metaclass=Singleton):
@@ -82,6 +80,8 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         frame_num: int,
         track_id: int,
         track: PlayerStateModel,
+        pixels_to_meters: float,
+        camera_scale: float,
         db: Session,
     ) -> None:
         """
@@ -98,54 +98,67 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             None
         """
         try:
+            info_logger.info(f"[SpeedAndDistance] Procesando distancia y velocidad para track {track_id} en frame {frame_num}")
             x = track.x
             y = track.y 
+            info_logger.info(f"[SpeedAndDistance] Posición del track para velocidad y distancia {track_id} en frame {frame_num}: x={x}, y={y}")
             if x is None or y is None:
+                info_logger.info(f"[SpeedAndDistance] No hay posición para track {track_id} en frame {frame_num}, saltando procesamiento.")
                 return
             pos = np.array([x, y])  # Debe ser np.array([x,y]) después de homografía
-            print(f"Procesando track {track_id} en frame {frame_num} con posición {pos}")
+            info_logger.info(f"[SpeedAndDistance] Procesando velocidad y posicion para track {track_id} en frame {frame_num} con posición {pos}")
             # Inicializar buffers
             if track_id not in self.position_history:
+                info_logger.info(f"[SpeedAndDistance] Inicializando buffers para track velocidad y posicion {track_id}")
                 self.position_history[track_id] = []
             if track_id not in self.speed_history:
+                info_logger.info(f"[SpeedAndDistance] Inicializando buffers para track velocidad y posicion {track_id}")
                 self.speed_history[track_id] = []
 
             # Agregar posición
             self.position_history[track_id].append(pos)
-            print(f"Posición agregada para track {track_id}: {pos}")
+            debug_logger.debug(f"[SpeedAndDistance] Posición agregada para track {track_id}: {pos}")
             # Mantener tamaño del buffer
             if len(self.position_history[track_id]) > self.history_size:
+                info_logger.info(f"[SpeedAndDistance] Manteniendo tamaño del buffer para track {track_id}")
                 self.position_history[track_id].pop(0)
-            print(f"Historial de posiciones para track {track_id}: {self.position_history[track_id]}")
+            info_logger.info(f"[SpeedAndDistance] Historial de posiciones para track {track_id}: {self.position_history[track_id]}")
             # Interpolación si no hay detección
             if pos is None:
-                print(f"No hay detección para track {track_id}")
+                info_logger.info(f"[SpeedAndDistance] No hay detección para track {track_id}")
                 interpolated = self._interpolate_last(self.position_history[track_id])
+                info_logger.info(f"[SpeedAndDistance] Posición interpolada para track {track_id}: {interpolated}")
                 self.position_history[track_id][-1] = interpolated
                 pos = interpolated
 
             # Suavizado
             smooth_positions = self._smooth_positions_array(self.position_history[track_id])
+            print(f"[SpeedAndDistance] Smoothed position for track id {track_id} on frame num {frame_num} positions are: {smooth_positions}")
+            debug_logger.debug(f"[SpeedAndDistance] Posiciones suavizadas para track {track_id}: {smooth_positions}")
             smoothed_pos = smooth_positions[-1]
-            print(f"Posición suavizada para track {track_id}: {smoothed_pos}")
+            debug_logger.debug(f"Posición suavizada para track {track_id}: {smoothed_pos}")
 
             # Velocidad
             if len(smooth_positions) >= 2:
                 # Distancia en metros
-                dist_m = measure_scalar_distance(smooth_positions[-1], smooth_positions[-2])
+                dist_m = measure_scalar_distance(smooth_positions[-1], smooth_positions[-2]) * pixels_to_meters
+                debug_logger.debug(f"[SpeedAndDistance] Distancia calculada para track {track_id}: {dist_m} metros")
+                debug_logger.debug(f"[SpeedAndDistance] Distancia calculada para track con escala {track_id}: {dist_m / camera_scale} metros")
+                debug_logger.debug(f"[SpeedAndDistance] Distancia calculada para track con escala multiplicada {track_id}: {dist_m * camera_scale} metros")
                 speed_kmh = (dist_m * self.frame_rate) * 3.6
-                print(f"Velocidad calculada para track {track_id}: {speed_kmh} km/h")
+                debug_logger.debug(f"[SpeedAndDistance] Velocidad calculada para track {track_id}: {speed_kmh} km/h")
             else:
                 speed_kmh = 0.0
 
             # Guardar velocidad histórica
             self.speed_history[track_id].append(speed_kmh)
             if len(self.speed_history[track_id]) > self.history_size:
+                info_logger.info(f"[SpeedAndDistance] Manteniendo tamaño del buffer de velocidad para track {track_id}")
                 self.speed_history[track_id].pop(0)
-            print(f"Historial de velocidades para track {track_id}: {self.speed_history[track_id]}")
+            debug_logger.debug(f"[SpeedAndDistance] Historial de velocidades para track {track_id}: {self.speed_history[track_id]}")
 
             smooth_speed_kmh = self._smooth_values(self.speed_history[track_id])[-1]
-            print(f"Velocidad suavizada para track {track_id}: {smooth_speed_kmh} km/h")
+            debug_logger.debug(f"[SpeedAndDistance] Velocidad suavizada para track {track_id}: {smooth_speed_kmh} km/h vs calculada {speed_kmh} km/h")
 
             # Aceleración
             if len(self.speed_history[track_id]) >= 2:
@@ -153,26 +166,26 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
                 acceleration = (v1 - v2) / (1 / self.frame_rate)
             else:
                 acceleration = 0.0
-            print(f"Aceleración calculada para track {track_id}: {acceleration} km/h²")
+            debug_logger.debug(f"[SpeedAndDistance] Aceleración calculada para track {track_id}: {acceleration} km/h²")
 
             # Distancia incremental
             if len(smooth_positions) >= 2:
                 incremental_dist = measure_scalar_distance(smooth_positions[-1], smooth_positions[-2])
+                debug_logger.debug(f"[SpeedAndDistance] Distancia incremental para track {track_id}: {incremental_dist} metros")
             else:
                 incremental_dist = 0.0
-            print(f"Distancia incremental para track {track_id}: {incremental_dist} metros")
+            debug_logger.debug(f"[SpeedAndDistance] Distancia incremental para track {track_id}: {incremental_dist} metros")
 
             # Distancia total
             total_distance = float(sum(
                 measure_scalar_distance(p1, p2)
                 for p1, p2 in zip(smooth_positions[:-1], smooth_positions[1:])
             ))
-            print(f"Distancia total para track {track_id}: {total_distance} metros")
+            debug_logger.debug(f"[SpeedAndDistance] Distancia total para track {track_id}: {total_distance} metros")
 
             # Sprint
             is_sprint = smooth_speed_kmh >= self.sprint_threshold
-            print(f"¿Está sprintando el track {track_id}? {'Sí' if is_sprint else 'No'}")
-
+            debug_logger.debug(f"[SpeedAndDistance] ¿Está sprintando el track {track_id}? {'Sí' if is_sprint else 'No'}")
             # Persistencia
             data_updated = {
                 "player_id": track_id,
@@ -187,7 +200,8 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             }
 
             player_collection = TrackCollectionPlayer(db)
-            player_collection.patch(int(f'{track.id}'), data_updated)
+            res = player_collection.patch(int(f'{track.id}'), data_updated)
+            debug_logger.debug(f"[SpeedAndDistance] Track {track_id} actualizado en DB: {res}")
         except Exception as e:
-            print(f"Error procesando track {track}: {e}")
+            error_logger.error(f"[SpeedAndDistance] Error procesando track {track}: {e}")
             raise e

@@ -11,7 +11,7 @@ from sklearn.cluster import MiniBatchKMeans
 from app.entities.collections.track_collections import TrackCollectionPlayer
 from app.entities.models.PlayerState import PlayerStateModel
 from app.entities.utils.singleton import Singleton
-
+from app.logger import *
 
 class TeamAssigner(metaclass=Singleton):
     """
@@ -165,9 +165,9 @@ class TeamAssigner(metaclass=Singleton):
             return None
         try:
             label = int(self.kmeans.predict(color_bgr.reshape(1, -1))[0])
-            return label + 1  # map 0->1, 1->2
+            return label + 1
         except Exception as e:
-            logging.debug(f"KMeans predict error: {e}")
+            error_logger.error(f"[Team Assigner] KMeans predict error: {e}")
             return None
 
     # ---------------------------
@@ -188,16 +188,17 @@ class TeamAssigner(metaclass=Singleton):
         """
         try:
         # obtener identificador estable: player_id preferible, si no id
-            print("Getting player team for record:", record)
+            debug_logger.debug("[Team Assigner] Getting player team for record:", record)
             player_id = getattr(record, "id", None)
             if player_id is None:
-                print("Record has no id attribute.")
+                debug_logger.debug("[Team Assigner] Record has no id attribute.")
                 return -1, None
 
             bbox = record.get_bbox()
-            print(f"[Team Assigner] Player ID: {player_id}, BBox: {bbox}")
+            debug_logger.debug(f"[Team Assigner] Player ID: {player_id}, BBox: {bbox}")
             if not bbox:
                 # usar majority vote de historial
+                debug_logger.debug("[Team Assigner] No bbox available, using history for team assignment.")
                 hist = self.player_team_history[player_id]
                 if len(hist) == 0:
                     return -1, None
@@ -205,37 +206,41 @@ class TeamAssigner(metaclass=Singleton):
                 return self._majority_vote(hist)
 
             # si no hay modelo entrenado → -1 (o podrías intentar bootstrap local)
-            print("Checking KMeans model...")
+            debug_logger.debug("[Team Assigner] Checking KMeans model...")
             if self.kmeans is None:
-                logging.debug("KMeans not initialized yet when predicting team.")
+                debug_logger.debug("[Team Assigner] KMeans not initialized yet when predicting team.")
                 return -1, None
 
-            print("Extracting player color...")
+            debug_logger.debug("[Team Assigner] Extracting player color...")
             color = self.extract_player_color(frame, bbox)
+            debug_logger.debug(f"[Team Assigner] Extracted color: {color}")
             if color is None:
                 # no color -> fallback
-                print("No pudo extraer color del jugador, usando historial.")
+                debug_logger.debug("[Team Assigner] No pudo extraer color del jugador, usando historial.")
                 hist = self.player_team_history[player_id]
                 if len(hist) == 0:
                     return -1, None
                 return self._majority_vote(hist)
 
-            print("Prediciendo equipo desde color...")
+            debug_logger.debug("[Team Assigner] Prediciendo equipo desde color...")
             pred = self._predict_from_color(color)
+            debug_logger.debug(f"[Team Assigner] Predicted team: {pred}")
             if pred is None:
-                logging.debug("No pudo predecir equipo desde color.")
+                debug_logger.debug("[Team Assigner] No pudo predecir equipo desde color.")
                 return -1, None
 
             # update smoothing history
             self.player_team_history[player_id].append(pred)
 
             # si la historia tiene suficiente longitud, usar mayoría; sino usar pred
-            print("Usando smoothing history...")
+            debug_logger.debug("[Team Assigner] Usando smoothing history...")
             hist = self.player_team_history[player_id]
+            debug_logger.debug(f"[Team Assigner] History: {hist}")
             team = self._majority_vote(hist) if len(hist) >= max(3, self.smoothing_window // 2) else pred
+            debug_logger.debug(f"[Team Assigner] Team after smoothing: {team}")
 
             # actualizar cache y devolver
-            print("Actualizando cache...")
+            debug_logger.debug("[Team Assigner] Actualizando cache...")
             self.player_team_cache[player_id] = int(team)
             player_record = TrackCollectionPlayer(db)
             player_record.patch(
@@ -245,11 +250,10 @@ class TeamAssigner(metaclass=Singleton):
                     "color":  json.dumps(self.team_colors.get(team)) if team in self.team_colors else None
                 }
             )
-            print(f"Equipo asignado al jugador {player_id}: {team}")
+            debug_logger.debug(f"[Team Assigner] Equipo asignado al jugador {player_id}: {team}")
             return int(team)
         except Exception as e:
-            logging.debug(f"Error predicting team: {e}")
-            print(f"Error predicting team: {e}")
+            error_logger.error(f"[Team Assigner] Error predicting team: {e}")
             return -1, None
 
     # ---------------------------
