@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.entities.collections.track_collections import TrackCollectionPlayer
 from app.entities.models.PlayerState import PlayerStateModel
 from app.entities.utils.singleton import Singleton
-from app.modules.services.bbox_processor_service import measure_scalar_distance
+from app.modules.services.bbox_processor_service import calculate_meters_per_pixel, measure_scalar_distance
 from app.logger import *
 
 
@@ -14,7 +14,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
 
     def __init__(
         self,
-        frame_rate: int = 24,
+        frame_rate: float = 24,
         sprint_threshold_kmh: float = 25.0,
         smoothing_window: int = 7,
         poly_order: int = 2,
@@ -82,6 +82,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         track: PlayerStateModel,
         pixels_to_meters: float,
         camera_scale: float,
+        dt: float,
         db: Session,
     ) -> None:
         """
@@ -99,8 +100,8 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         """
         try:
             info_logger.info(f"[SpeedAndDistance] Procesando distancia y velocidad para track {track_id} en frame {frame_num}")
-            x = track.x
-            y = track.y 
+            x = float(f'{track.x}')
+            y = float(f'{track.y}')
             info_logger.info(f"[SpeedAndDistance] Posición del track para velocidad y distancia {track_id} en frame {frame_num}: x={x}, y={y}")
             if x is None or y is None:
                 info_logger.info(f"[SpeedAndDistance] No hay posición para track {track_id} en frame {frame_num}, saltando procesamiento.")
@@ -131,21 +132,22 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
                 self.position_history[track_id][-1] = interpolated
                 pos = interpolated
 
-            # Suavizado
             smooth_positions = self._smooth_positions_array(self.position_history[track_id])
-            print(f"[SpeedAndDistance] Smoothed position for track id {track_id} on frame num {frame_num} positions are: {smooth_positions}")
             debug_logger.debug(f"[SpeedAndDistance] Posiciones suavizadas para track {track_id}: {smooth_positions}")
             smoothed_pos = smooth_positions[-1]
-            debug_logger.debug(f"Posición suavizada para track {track_id}: {smoothed_pos}")
+            debug_logger.debug(f"[SpeedAndDistance] Posición suavizada para track {track_id}: {smoothed_pos}")
+            # roi = np.array([smoothed_pos[0], smoothed_pos[1], smoothed_pos[0], smoothed_pos[1]]) proximamente utilizar la posicion anterior para calcular la distancia recorrida
 
             # Velocidad
             if len(smooth_positions) >= 2:
+                debug_logger.debug(f"[SpeedAndDistance] Calculando metros por pixel para track {track_id}, datos enviados: {smooth_positions[-1], smooth_positions[-2], pixels_to_meters}   ")
+                meters = calculate_meters_per_pixel(smooth_positions[-1], smooth_positions[-2], pixels_to_meters)
+                debug_logger.debug(f"[SpeedAndDistance] Meters per pixel calculados para track {track_id}: {meters} metros/pixel con pixels_to_meters={pixels_to_meters}")
                 # Distancia en metros
-                dist_m = measure_scalar_distance(smooth_positions[-1], smooth_positions[-2]) * pixels_to_meters
+                dist_m = (measure_scalar_distance(smooth_positions[-1], smooth_positions[-2]) * pixels_to_meters) / camera_scale
                 debug_logger.debug(f"[SpeedAndDistance] Distancia calculada para track {track_id}: {dist_m} metros")
-                debug_logger.debug(f"[SpeedAndDistance] Distancia calculada para track con escala {track_id}: {dist_m / camera_scale} metros")
-                debug_logger.debug(f"[SpeedAndDistance] Distancia calculada para track con escala multiplicada {track_id}: {dist_m * camera_scale} metros")
-                speed_kmh = (dist_m * self.frame_rate) * 3.6
+                
+                speed_kmh = (dist_m * self.frame_rate) * 3.6  
                 debug_logger.debug(f"[SpeedAndDistance] Velocidad calculada para track {track_id}: {speed_kmh} km/h")
             else:
                 speed_kmh = 0.0

@@ -3,6 +3,7 @@ import logging
 from collections import deque, defaultdict
 from typing import Dict, List, Optional, Tuple
 from cv2.typing import MatLike
+from scipy import stats
 from sqlalchemy.orm import Session
 
 import cv2
@@ -32,6 +33,7 @@ class TeamAssigner(metaclass=Singleton):
     ):
         # estado del modelo
         self.kmeans: Optional[MiniBatchKMeans] = None
+        self.last_kmeans_train_length = 0
         self.team_colors: Dict[int, np.ndarray] = {}
 
         # cache y smoothing
@@ -80,46 +82,44 @@ class TeamAssigner(metaclass=Singleton):
     # ---------------------------
     # HSV filtering (excluir césped)
     # ---------------------------
-    def _mask_non_green(self, img_bgr: np.ndarray) -> np.ndarray:
-        """Devuelve máscara booleana de píxeles NO-verdes (True = candidato)."""
-        img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-        h, s, v = self.hsv_green_thresh
-        lower_green = np.array([30, 40, 30])  # tolerancia base (puedes ajustar)
-        upper_green = np.array([90, 255, 255])
-        green_mask = cv2.inRange(img_hsv, lower_green, upper_green)
-        return green_mask == 0  # True para no-verdes
-
-    # ---------------------------
-    # Extraer color dominante (rápido + robusto)
-    # ---------------------------
+    
+    def _illuminant_normalize(self, bgr: np.ndarray) -> np.ndarray:
+        """Gray-world simple: divide por la media de cada canal."""
+        bgr = bgr.astype(np.float32)
+        mu = bgr.reshape(-1, 3).mean(axis=0)
+        gray = mu.mean()
+        scale = gray / (mu + 1e-6)
+        return np.clip(bgr * scale, 0, 255).astype(np.uint8)
+    
     def extract_player_color(self, frame: MatLike, bbox: List[int]) -> Optional[np.ndarray]:
-        """
-        Intenta devolver un arreglo RGB (float) representativo del torso.
-        Aplica: crop seguro → torso → máscara no-verde → sample de píxeles → centroid simple.
-        Evita KMeans por jugador para agilizar (salvo en bootstrap).
-        """
         crop = self._safe_crop(frame, bbox)
         if crop is None:
             return None
-
         torso = self._torso_region(crop)
         if torso is None or torso.size == 0:
             return None
 
-        mask = self._mask_non_green(torso)
-        if mask.sum() < 30:  # pocos píxeles válidos
-            # si no quedan muchos no-verdes, tomar todo el torso como fallback
-            pixels = torso.reshape(-1, 3)
-        else:
-            pixels = torso[mask].reshape(-1, 3)
+        # 1. Normaliza iluminación
+        torso = self._illuminant_normalize(torso)
 
-        if pixels.shape[0] < 20:
+        # 2. Convierte a LAB
+        torso_lab = cv2.cvtColor(torso, cv2.COLOR_BGR2LAB)
+        torso_lab = torso_lab.reshape(-1, 3)
+        torso_lab = torso_lab[torso_lab[:,0] > 40]
+        
+        if len(torso_lab) < 20:
+            debug_logger.debug("[Extract Player Color] No hay suficientes píxeles válidos después de filtrar por luminosidad.")
             return None
 
-        # usar centroid (media) en lugar de KMeans por jugador — más rápido y estable
-        color = pixels.mean(axis=0)  # BGR
-        # convertir a RGB para consistencia con centros si usas sklearn (pero mantenemos BGR interno)
-        return color.astype(np.float32)
+        bins = 16
+
+        lab_q = torso_lab // (256 // bins)
+        code  = lab_q[:, 0]*(bins**2) + lab_q[:, 1]*bins + lab_q[:, 2]
+        mode_code = int(stats.mode(code, keepdims=False).mode)
+        l, a, b = np.unravel_index(mode_code, (bins, bins, bins))
+        color_lab = np.array([l, a, b], dtype=np.float32) * (256//bins)
+        color_bgr = cv2.cvtColor(color_lab.reshape(1,1,3).astype(np.uint8), cv2.COLOR_LAB2BGR)[0,0]
+        return color_bgr.astype(np.float32)
 
     # ---------------------------
     # Bootstrap (one-shot) de colores de equipo
@@ -177,7 +177,9 @@ class TeamAssigner(metaclass=Singleton):
         """
         Método principal: intenta bootstrap si no hay modelo; no reentrena si ya existe.
         """
-        if self.kmeans is None:
+        if self.kmeans is None or (len(players) % self.min_bootstrap_players == 0 and len(players) != self.last_kmeans_train_length):
+            self.last_kmeans_train_length = len(players)
+            debug_logger.debug(f"[Team Assigner] Actual train length: {self.last_kmeans_train_length}")
             self.bootstrap_colors(frame, players)
         # Aquí podrías actualizar cache, smoothing o predicciones por frame
 
@@ -188,7 +190,7 @@ class TeamAssigner(metaclass=Singleton):
         """
         try:
         # obtener identificador estable: player_id preferible, si no id
-            debug_logger.debug("[Team Assigner] Getting player team for record:", record)
+            debug_logger.debug(f"[Team Assigner] Getting player team for record: {record}")
             player_record = TrackCollectionPlayer(db)
             player_id = getattr(record, "id", None)
             if player_id is None:
@@ -244,11 +246,13 @@ class TeamAssigner(metaclass=Singleton):
             # actualizar cache y devolver
             debug_logger.debug("[Team Assigner] Actualizando cache...")
             self.player_team_cache[player_id] = int(team)
+            debug_logger.debug(f"[Team Assigner] Team selected: {team} y color selected: {self.team_colors.get(team)}")
+            color = self.team_colors.get(team) if team in self.team_colors else None
             player_record.patch(
                 player_id,
                 {
                     "team": team,
-                    "color":  json.dumps(self.team_colors.get(team)) if team in self.team_colors else None
+                    "color":  json.dumps(color.tolist()) if color is not None and color.any() else None
                 }
             )
             debug_logger.debug(f"[Team Assigner] Equipo asignado al jugador {player_id}: {team}")

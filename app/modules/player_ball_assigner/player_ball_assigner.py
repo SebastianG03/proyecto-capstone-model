@@ -17,7 +17,7 @@ class PlayerBallAssigner():
         maximum_player_ball_distance: int = 70,
         angle_threshold: float = 45.0,
         cooldown_frames: int = 5,
-        fps: int = 30):
+        fps: float = 30):
         self.maximum_player_ball_distance = maximum_player_ball_distance
         self.angle_threshold = angle_threshold
         self.cooldown_frames = cooldown_frames

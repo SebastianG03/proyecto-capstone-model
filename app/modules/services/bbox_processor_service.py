@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from scipy.spatial import distance as dist
 from cv2.typing import MatLike
-from app.logger import debug_logger
+from app.logger import debug_logger, error_logger
 
 
 def get_center_of_bbox(bbox) -> tuple[int, int]:
@@ -28,8 +28,6 @@ def measure_scalar_distance(p1, p2) -> float:
     """
     distance = dist.euclidean(p1, p2)
     debug_logger.debug(f"[MeasureScalarDistance] Distancia euclidiana: {distance}")
-    manual_dist = np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
-    debug_logger.debug(f"[MeasureScalarDistance] Distancia euclidiana (manual): {manual_dist}")
     return distance
 
 
@@ -98,3 +96,20 @@ def calculate_area_boundary_ends(frame: MatLike) -> tuple[np.ndarray, np.ndarray
     B = np.array([max(x1,x2), float(y2)], dtype=float)
     debug_logger.debug(f"[CalculateAreaBoundaryEnds] Extremos de la línea de área: A={A}, B={B}")
     return A, B
+
+def calculate_meters_per_pixel(
+    p1: np.ndarray,
+    p2: np.ndarray,
+    real_distance_m: float) -> float:
+    """
+    Calcula la cantidad de metros por píxel dada una distancia real y dos puntos.
+    """
+    try:
+        p1 = np.array(p1)
+        p2 = np.array(p2)
+        pixel_distance = dist.euclidean(p1, p2)
+        debug_logger.debug(f"[CalculateMetersPerPixel] Distancia en píxeles entre puntos: {pixel_distance}")
+        return real_distance_m / pixel_distance
+    except Exception as e:
+        error_logger.error(f"[CalculateMetersPerPixel] Error calculando metros por píxel: {e}")
+        return 0.0

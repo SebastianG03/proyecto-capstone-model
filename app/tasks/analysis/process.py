@@ -32,7 +32,6 @@ def process_frame(
     """
     player_image_counts: dict = {}
     last_frame_taken: dict = {}
-    
     try:
         for frame, dt in video_batch:
             frame_num += 1
@@ -105,6 +104,7 @@ def process_frame(
                         pixels_to_meters=pixels_to_meters,
                         camera_scale=tools.camera_movement_estimator.get_current_scale(),
                         db=db,
+                        dt=dt,
                     )
                 else:
                     info_logger.info("[ProcessRun] No hay último jugador para estimar velocidad/distancia.")

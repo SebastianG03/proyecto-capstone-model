@@ -39,7 +39,7 @@ class TrackCollectionBall(RecordCollectionBase):
     def generate_id(self, obj):
         return obj.frame_index
     @override
-    def get_last(self, db):
+    def get_last(self, db) -> BallEventModel:
         return db.query(BallEventModel).order_by(BallEventModel.id.desc()).first()
 
     @override

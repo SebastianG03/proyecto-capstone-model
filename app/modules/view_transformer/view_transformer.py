@@ -84,22 +84,22 @@ class ViewTransformer:
         ball_collection = TrackCollectionBall(db)
         player_collection = TrackCollectionPlayer(db)
 
-        info_logger.info("Transformando posiciones en registros...")
+        info_logger.info("[ViewTransformer] Transformando posiciones en registros...")
         try:
             ball_register = ball_collection.get_last(db=db)
             player_register = player_collection.get_last(db=db)
             info_logger.info(f"[ViewTransformer] Registro de balon extraido: {ball_register is not None}")
             info_logger.info(f"[ViewTransformer] Registro de jugador extraido: {player_register is not None}")
-            if not ball_register:
-                debug_logger.debug("Calculando posición transformada del balon...")
+            if ball_register is not None:
+                debug_logger.debug(f"[ViewTransformer] Calculando posición transformada del balon, datos del balon {ball_register.to_dict()}")
                 self.calculate_ball_transformed_position(ball_record=ball_register, db=db)
-            if not player_register:
-                debug_logger.debug("Calculando posición transformada del jugador...")
+            if player_register is not None:
+                debug_logger.debug(f"[ViewTransformer] Calculando posición transformada del jugador, datos del jugador {player_register.to_dict()}")
                 self.calculate_player_transformed_position(player_record=player_register, db=db)
 
-            info_logger.info("No hay registros para transformar.")
+            info_logger.info("[ViewTransformer] No hay registros para transformar.")
         except Exception as e:
-            error_logger.error(f"Error transformando posiciones en records: {e}")
+            error_logger.error(f"[ViewTransformer] Error transformando posiciones en records: {e}")
             raise e
 
 
@@ -136,7 +136,7 @@ class ViewTransformer:
             )
             return
         except Exception as e:
-            error_logger.error(f"Error calculando posición transformada del balón: {e}")
+            error_logger.error(f"[ViewTransformer] Error calculando posición transformada del balón: {e}")
             raise e
 
     def calculate_player_transformed_position(
@@ -172,5 +172,5 @@ class ViewTransformer:
             )
             return
         except Exception as e:
-            error_logger.error(f"Error calculando posición transformada del jugador: {e}")
+            error_logger.error(f"[ViewTransformer] Error calculando posición transformada del jugador: {e}")
             raise e
