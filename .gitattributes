@@ -1,2 +1,1 @@
-git rm --cached app/res/models/best.torchscript
 *.torchscript filter=lfs diff=lfs merge=lfs -text
