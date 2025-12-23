@@ -64,7 +64,6 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
                 logging.info("CUDA cache cleared on TrackerServiceBase deletion.")
         except Exception as e:
             logging.error(f"Error during TrackerServiceBase deletion: {e}")
-            pass
 
     def __enter__(self):
         logging.info("Entering context: TrackerServiceBase")
