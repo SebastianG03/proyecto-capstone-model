@@ -11,13 +11,14 @@ from app.modules.services.verify_model import prepare_model
 from app.modules.trackers import TrackerService
 from sqlalchemy.orm import Session
 
+from app.tasks import upload
 from app.tasks.analysis.process import process_frame
 from app.tasks.analysis_tools import AnalysisTools
 from app.tasks.upload_heatmaps import upload_heatmaps_for_extracted_players
 from app.utils.routes import INPUT_VIDEOS_DIR, MODELS_DIR, OUTPUT_REPORTS_DIR
 from app.logger import *
 
-async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
+def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     try:
         export_data_file = OUTPUT_REPORTS_DIR / f"export_data_match_{match_id}.txt"
         export_data_file.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +53,7 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     # Descarga video
     downloader = R2Downloader()
     
-    video_name = "fb64992c-0a84-4fb5-8c3c-42f4ddbfda1c-1_720p.mkv"
+    # video_name = "fb64992c-0a84-4fb5-8c3c-42f4ddbfda1c-1_720p.mkv"
 
     print(f"Descargando video {video_name}...")
     download_path = downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
@@ -131,10 +132,10 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
         info_logger.info(f"Batch procesado. Frames hasta ahora: {frame_num + len(batch)}")
 
     info_logger.info(f"Jugadores con imágenes extraídas {saved_player_ids}")
-
-    generate_diagrams(db)
+    
+    generate_diagrams(db, tools.speed_and_distance.position_history)
     info_logger.info("Diagramas generados.")
-    await upload_heatmaps_for_extracted_players(db=db, match_id=match_id, extracted_player_ids=set(saved_player_ids))
+    upload_heatmaps_for_extracted_players(db=db, match_id=match_id, extracted_player_ids=set(saved_player_ids))
     info_logger.info("Heatmaps subidos.")
 
     total_time = time.time() - start_time
@@ -156,7 +157,9 @@ async def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     info_logger.info(f"Escribiendo métricas a {metrics_file.as_posix()}...")
     metrics_file.parent.mkdir(parents=True, exist_ok=True)
     metrics_file.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
+    upload(
+        key=f"{match_id}/reports/metrics_match_{match_id}.json",
+        file_bytes=metrics_file.read_bytes(),
+        file_type="application/json"
+    )
     info_logger.info("Métricas escritas.")
-
-
-

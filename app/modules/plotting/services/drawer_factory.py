@@ -13,6 +13,7 @@ class DrawerFactory:
     @classmethod
     def run_drawer(cls,
                    drawer_type: Type[Diagram],
+                   positions: Dict,
                    db: Session) -> None:
         """Runs a specific drawer based on the drawer type."""
 

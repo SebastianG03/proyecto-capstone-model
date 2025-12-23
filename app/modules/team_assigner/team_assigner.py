@@ -20,7 +20,7 @@ class TeamAssigner(metaclass=Singleton):
     - Bootstrap (one-shot) de colores de equipo.
     - Clasificación O(1) por jugador por frame.
     - Smoothing temporal por jugador (ventana configurable).
-    - Filtrado HSV para reducir césped/ruido; toma torso central.
+    - Toma torso central + K-means RGB simple (3 clusters).
     - Fallbacks robustos si bbox está recortado o inválido.
     """
 
@@ -29,7 +29,6 @@ class TeamAssigner(metaclass=Singleton):
         smoothing_window: int = 11,
         min_bootstrap_players: int = 8,
         torso_fraction: float = 0.4,
-        hsv_green_thresh: Tuple[int, int, int] = (35, 40, 40),
     ):
         # estado del modelo
         self.kmeans: Optional[MiniBatchKMeans] = None
@@ -46,7 +45,6 @@ class TeamAssigner(metaclass=Singleton):
         self.smoothing_window = smoothing_window
         self.min_bootstrap_players = min_bootstrap_players
         self.torso_fraction = float(np.clip(torso_fraction, 0.2, 0.6))
-        self.hsv_green_thresh = hsv_green_thresh  # (h,s,v) baseline to ignore greens
 
     # ---------------------------
     # Helpers bbox / crop
@@ -73,16 +71,15 @@ class TeamAssigner(metaclass=Singleton):
 
     def _torso_region(self, crop: np.ndarray) -> Optional[np.ndarray]:
         h = crop.shape[0]
-        start = int(h * (0.2))  # ignorar la cabeza ~20%
+        start = int(h * 0.2)  # ignorar cabeza ~20 %
         end = int(h * (0.2 + self.torso_fraction))
         if end <= start:
             return None
         return crop[start:end, :]
 
     # ---------------------------
-    # HSV filtering (excluir césped)
+    # Normaliza iluminación
     # ---------------------------
-    
     def _illuminant_normalize(self, bgr: np.ndarray) -> np.ndarray:
         """Gray-world simple: divide por la media de cada canal."""
         bgr = bgr.astype(np.float32)
@@ -90,8 +87,19 @@ class TeamAssigner(metaclass=Singleton):
         gray = mu.mean()
         scale = gray / (mu + 1e-6)
         return np.clip(bgr * scale, 0, 255).astype(np.uint8)
-    
+
+    # --------------------------------------------------
+    #  NUEVO: extract_player_color  -> K-means RGB simple
+    # --------------------------------------------------
     def extract_player_color(self, frame: MatLike, bbox: List[int]) -> Optional[np.ndarray]:
+        """
+        Devuelve el color dominante (BGR, float32) del torso del jugador.
+        Copia exacta del pipeline que ya te funcionaba:
+        - crop + torso
+        - normaliza iluminación
+        - K-means 3 clusters sobre RGB
+        - se queda con el cluster más grande
+        """
         crop = self._safe_crop(frame, bbox)
         if crop is None:
             return None
@@ -99,27 +107,29 @@ class TeamAssigner(metaclass=Singleton):
         if torso is None or torso.size == 0:
             return None
 
-        # 1. Normaliza iluminación
+        # 1. Iluminancia constante
         torso = self._illuminant_normalize(torso)
 
-        # 2. Convierte a LAB
-        torso_lab = cv2.cvtColor(torso, cv2.COLOR_BGR2LAB)
-        torso_lab = torso_lab.reshape(-1, 3)
-        torso_lab = torso_lab[torso_lab[:,0] > 40]
-        
-        if len(torso_lab) < 20:
-            debug_logger.debug("[Extract Player Color] No hay suficientes píxeles válidos después de filtrar por luminosidad.")
-            return None
+        # 2. RGB plano
+        rgb = cv2.cvtColor(torso, cv2.COLOR_BGR2RGB)
+        pixels = rgb.reshape(-1, 3)
 
-        bins = 16
+        # 3. K-means 3 clusters
+        km = MiniBatchKMeans(n_clusters=3, batch_size=2048, random_state=0)
+        labels = km.fit_predict(pixels)
+        centers = km.cluster_centers_
 
-        lab_q = torso_lab // (256 // bins)
-        code  = lab_q[:, 0]*(bins**2) + lab_q[:, 1]*bins + lab_q[:, 2]
-        mode_code = int(stats.mode(code, keepdims=False).mode)
-        l, a, b = np.unravel_index(mode_code, (bins, bins, bins))
-        color_lab = np.array([l, a, b], dtype=np.float32) * (256//bins)
-        color_bgr = cv2.cvtColor(color_lab.reshape(1,1,3).astype(np.uint8), cv2.COLOR_LAB2BGR)[0,0]
-        return color_bgr.astype(np.float32)
+        # 4. ¿cuál es el más poblado?
+        uniq, counts = np.unique(labels, return_counts=True)
+        best = uniq[np.argmax(counts)]
+        dominant_rgb = centers[best]
+
+        # 5. De vuelta a BGR y listo
+        dominant_bgr = cv2.cvtColor(
+            dominant_rgb.reshape(1, 1, 3).astype(np.uint8), cv2.COLOR_RGB2BGR
+        )[0, 0]
+
+        return dominant_bgr.astype(np.float32)  # 0-255 seguro
 
     # ---------------------------
     # Bootstrap (one-shot) de colores de equipo
@@ -189,7 +199,7 @@ class TeamAssigner(metaclass=Singleton):
         para evitar saltos por recortes malos.
         """
         try:
-        # obtener identificador estable: player_id preferible, si no id
+            # obtener identificador estable: player_id preferible, si no id
             debug_logger.debug(f"[Team Assigner] Getting player team for record: {record}")
             player_record = TrackCollectionPlayer(db)
             player_id = getattr(record, "id", None)
@@ -252,7 +262,7 @@ class TeamAssigner(metaclass=Singleton):
                 player_id,
                 {
                     "team": team,
-                    "color":  json.dumps(color.tolist()) if color is not None and color.any() else None
+                    "color": json.dumps(color.tolist()) if color is not None and color.any() else None
                 }
             )
             debug_logger.debug(f"[Team Assigner] Equipo asignado al jugador {player_id}: {team}")

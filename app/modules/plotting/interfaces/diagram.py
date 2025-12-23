@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 
 class Diagram(ABC):
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, *args, **kwargs):
         self.db = db
 
     @abstractmethod

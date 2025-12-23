@@ -46,7 +46,7 @@ async def process_run(db: Session, video_name: str, match_id: int, db_session_fa
     try:
         from app.tasks.runner import run_analysis
         print("Analisis iniciado...")
-        await run_analysis(db=db, video_name=video_name, match_id=match_id)
+        run_analysis(db=db, video_name=video_name, match_id=match_id)
         print("Exportando datos...")
         await export_data(db, match_id)
         print("Datos exportados.")
@@ -94,15 +94,15 @@ async def export_data(db: Session, match_id: int, max_records: int = 100000):
         ball_output_file.write_text(json.dumps(ball_export_data, indent=2, ensure_ascii=False), encoding="utf-8")
         
         print("Subiendo datos exportados...")
-        # file_bytes = player_output_file.read_bytes()
-        # timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        # key = f"match_{match_id}/{timestamp}_{player_output_file.name}"
-        # upload(
-        #     key=key,
-        #     file_bytes=file_bytes,
-        #     file_type="application/json"
-        # )
-        # print("Datos subidos correctamente.")
+        file_bytes = player_output_file.read_bytes()
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        key = f"{match_id}/reports/{timestamp}_{player_output_file.name}"
+        upload(
+            key=key,
+            file_bytes=file_bytes,
+            file_type="application/json"
+        )
+        print("Datos subidos correctamente.")
     except Exception as e:
         print(f"Error al exportar datos: {e}")
         raise e

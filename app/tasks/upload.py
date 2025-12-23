@@ -21,7 +21,7 @@ def upload_file(
     file_bytes: bytes,
 ):
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
-    key = f"player_{player_id}_match_{match_id}/{timestamp}_{filename}"
+    key = f"{match_id}/{timestamp}_{filename}"
     upload(key, file_bytes)
 
 @retry(
