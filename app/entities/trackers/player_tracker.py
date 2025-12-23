@@ -73,10 +73,7 @@ class PlayerTracker(Tracker):
             print(f"[PlayerTracker] No hay clase 'player' en frame {frame_num}")
             return
 
-        try:
-            mask = class_ids_arr == player_class_idx
-        except Exception:
-            mask = (class_ids_arr == player_class_idx)
+        mask = class_ids_arr == player_class_idx
 
         if not getattr(mask, "any", lambda: False)():
             print(f"[PlayerTracker] Ningún jugador detectado frame {frame_num}")
