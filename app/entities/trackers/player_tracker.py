@@ -74,9 +74,6 @@ class PlayerTracker(Tracker):
             return
 
         mask = class_ids_arr == player_class_idx
-
-        if not getattr(mask, "any", lambda: False)():
-            print(f"[PlayerTracker] Ningún jugador detectado frame {frame_num}")
             return
 
         player_bboxes = xyxy_arr[mask]
