@@ -3,9 +3,9 @@ import json
 import pathlib
 from sqlalchemy import create_engine
 
-from app.entities.collections.track_collections import TrackCollectionPlayer
+from app.entities.collections import TrackCollectionPlayer
 from app.entities.models.BallState import BallEventModel
-from app.entities.models.PlayerState import PlayerStateModel
+from app.entities.models.PlayerModels import PlayerState, Player
 from app.modules.services.database import Base
 from sqlalchemy.orm import sessionmaker, Session
 

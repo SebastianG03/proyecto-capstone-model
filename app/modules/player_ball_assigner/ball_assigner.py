@@ -5,9 +5,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.entities.collections.track_collections import TrackCollectionPlayer
-from app.entities.models.BallState import BallEventModel
-from app.entities.models.PlayerState import PlayerStateModel
+from app.entities.collections import TrackCollectionPlayer
+from app.entities.models.PlayerModels import Player, PlayerState
 from app.logger import debug_logger
 
 class BallAssigner:

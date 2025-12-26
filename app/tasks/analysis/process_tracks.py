@@ -22,7 +22,7 @@ def process_tracks_and_position(
             tracker.get_object_tracks(frame, frame_num, db)
 
             print("Actualizando último track...")
-            last_track = collection.get_last(db)
+            last_track = collection.get_last()
             if last_track is None:
                 print("No hay track para actualizar, saltando...")
                 continue
