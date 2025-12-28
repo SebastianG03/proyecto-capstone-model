@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.entities.interfaces.tracker_base import Tracker
 from app.entities.collections import TrackCollectionPlayer
-from app.layers.domain import tracks 
+from app.logger import debug_logger, info_logger, error_logger
 
 class PlayerTracker(Tracker):
 
@@ -35,7 +35,6 @@ class PlayerTracker(Tracker):
             detection_with_tracks,
             cls_names_inv,
             frame_num,
-            detection_supervision,
             db
         )
 
@@ -44,21 +43,20 @@ class PlayerTracker(Tracker):
         detection_with_tracks: sv.Detections,
         cls_names_inv: dict[str, int],
         frame_num: int,
-        detection_supervision: sv.Detections,
         db: Session
     ):
         tracks_collection = TrackCollectionPlayer(db)
-        print(f"[PlayerTracker] START get_tracker_tracks frame {frame_num}")
+        info_logger.info(f"[PlayerTracker] START get_tracker_tracks frame {frame_num}")
 
         if detection_with_tracks is None:
-            print(f"[PlayerTracker] No detecciones para frame {frame_num}")
+            info_logger.info(f"[PlayerTracker] No detecciones para frame {frame_num}")
             return
 
         xyxy = getattr(detection_with_tracks, "xyxy", None)
         class_ids = getattr(detection_with_tracks, "class_id", None)
         tracker_ids = getattr(detection_with_tracks, "tracker_id", None)
         if xyxy is None or class_ids is None or tracker_ids is None:
-            print(f"[PlayerTracker] xyxy, class_ids o tracker_ids faltantes frame {frame_num}")
+            info_logger.info(f"[PlayerTracker] xyxy, class_ids o tracker_ids faltantes frame {frame_num}")
             return
 
         try:
@@ -70,11 +68,10 @@ class PlayerTracker(Tracker):
 
         player_class_idx = cls_names_inv.get("player")
         if player_class_idx is None:
-            print(f"[PlayerTracker] No hay clase 'player' en frame {frame_num}")
+            info_logger.info(f"[PlayerTracker] No hay clase 'player' en frame {frame_num}")
             return
 
         mask = class_ids_arr == player_class_idx
-            return
 
         player_bboxes = xyxy_arr[mask]
         player_ids = tracker_ids_arr[mask]
@@ -86,7 +83,7 @@ class PlayerTracker(Tracker):
             try:
                 track_id = int(raw_tid)
             except Exception:
-                print(f"[PlayerTracker] Track id inválido: {raw_tid}")
+                info_logger.info(f"[PlayerTracker] Track id inválido: {raw_tid}")
                 continue
             try:
                 bbox_list = bbox_arr.tolist()
@@ -94,7 +91,7 @@ class PlayerTracker(Tracker):
                 bbox_list = list(map(float, bbox_arr))
 
             cx, cy = self._bbox_to_center(bbox_list)
-            print("Bbox jugador ", track_id, bbox_list, f"centro ({cx}, {cy})")
+            info_logger.info(f"Bbox jugador {track_id} {bbox_list} centro ({cx}, {cy})")
             payload = {
                 "player_id": track_id,
                 "frame_index": int(frame_num),
@@ -104,15 +101,17 @@ class PlayerTracker(Tracker):
                 "z": 0.0
             }
 
-            print(f"[PlayerTracker] Buscando jugador {track_id} frame {frame_num}")
-            existing = tracks_collection.get_record_for_frame(track_id=track_id, frame_index=int(frame_num))
+            info_logger.info(f"[PlayerTracker] Buscando jugador {track_id} frame {frame_num}")
+            existing = tracks_collection.verify_player_exists(track_id)
+            state_exist = tracks_collection.verify_player_state_exists(track_id, frame_num)
 
-            try:
-                if existing:
-                    tracks_collection.patch(int(f'{existing.id}'), payload)
-                else:
-                    tracks_collection.post(payload)
-            except Exception as e:
-                print(f"[PlayerTracker] DB error jugador {track_id} frame {frame_num}: {e}")
-
+            if not existing:
+                tracks_collection.post({
+                    "player_id": track_id,
+                })
+                tracks_collection.post_state(payload)
+            if existing and state_exist:
+                tracks_collection.patch_state(track_id, frame_num, payload)
+            elif existing and not state_exist:
+                tracks_collection.post_state(payload)
         print(f"[PlayerTracker] END get_tracker_tracks frame {frame_num}")

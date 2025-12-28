@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer
 from app.entities.models.BallState import BallEventModel
-from app.entities.models.PlayerState import PlayerStateModel
+from app.entities.models.PlayerModels import PlayerState, Player
 from app.logger import debug_logger, error_logger, info_logger
 
 class ViewTransformer:

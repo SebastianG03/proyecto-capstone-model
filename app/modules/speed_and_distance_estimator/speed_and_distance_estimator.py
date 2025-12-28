@@ -3,8 +3,8 @@ import numpy as np
 from scipy.signal import savgol_filter
 from sqlalchemy.orm import Session
 
-from app.entities.collections.track_collections import TrackCollectionPlayer
-from app.entities.models.PlayerState import PlayerStateModel
+from app.entities.collections import TrackCollectionPlayer
+from app.entities.models.PlayerModels import Player, PlayerState
 from app.entities.utils.singleton import Singleton
 from app.modules.services.bbox_processor_service import calculate_meters_per_pixel, measure_scalar_distance
 from app.logger import *

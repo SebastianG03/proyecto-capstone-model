@@ -1,1 +1,2 @@
-from .track_collections import TrackCollectionBall, TrackCollectionHeatmapPoint, TrackCollectionPlayer
+from .track_collections import TrackCollectionBall, TrackCollectionHeatmapPoint
+from .player_collections import TrackCollectionPlayer

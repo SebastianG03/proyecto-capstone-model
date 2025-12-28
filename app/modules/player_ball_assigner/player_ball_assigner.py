@@ -1,15 +1,13 @@
 
 from asyncio.log import logger
-from typing import Any, Dict, List, Union
+from typing import List
 from sqlalchemy.orm import Session
 
 import numpy as np
-from app.entities.collections.track_collections import TrackCollectionPlayer
+from app.entities.collections import TrackCollectionPlayer
 from app.entities.models.BallState import BallEventModel
 from app.modules.player_ball_assigner.ball_assigner import BallAssigner
-from app.modules.services.bbox_processor_service import (
-    get_center_of_bbox, measure_scalar_distance)
-from app.entities.models.PlayerState import PlayerStateModel
+from app.entities.models.PlayerModels import PlayerState, Player
 
 class PlayerBallAssigner():
     def __init__(

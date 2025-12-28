@@ -24,8 +24,8 @@ class RecordCollectionBase(metaclass=Singleton):
         """
         return obj.track_id
     
-    def get_last(self, db):
-        return db.query(self.orm_model).order_by(self.orm_model.id.desc()).first()
+    def get_last(self):
+        return self.db.query(self.orm_model).order_by(self.orm_model.id.desc()).first()
 
     #TODO Update to specific collection use
     def get_record_for_frame(self, track_id: int, frame_index: int):

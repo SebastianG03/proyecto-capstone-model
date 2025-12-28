@@ -9,13 +9,11 @@ import torch
 from ultralytics.models import YOLO
 
 
-from app.entities.collections.track_collections import TrackCollectionBall, TrackCollectionPlayer
-from app.entities.interfaces.record_collection_base import RecordCollectionBase
+from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer
 from app.entities.interfaces.tracker_base import Tracker
 from app.entities.models.BallState import BallEventModel
-from app.entities.models.PlayerState import PlayerStateModel
+from app.entities.models.PlayerModels import Player
 from app.entities.utils.singleton import AbstractSingleton
-from app.layers.infraestructure.video_analysis.trackers.entities.ball_tracker import BallTracker
 from app.modules.services.bbox_processor_service import get_center_of_bbox
 from sqlalchemy.orm import Session
 
@@ -166,7 +164,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
     def get_trackers(self) -> List:
         return list(self.tracker_factory.get_trackers().values())
 
-    def add_position_to_track(self, db: Session, track: PlayerStateModel | BallEventModel) -> None:
+    def add_position_to_track(self, db: Session, track: Player | BallEventModel) -> None:
         try:
             bbox = track.get_bbox()
             print("Bbox del track ", track.id, ": ", bbox)
@@ -176,7 +174,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
 
             print(f"Adding position to track {track.id} with bbox {bbox} de tipo {type(track)}")
             position = get_center_of_bbox(bbox)
-            if isinstance(track, PlayerStateModel):
+            if isinstance(track, Player):
                 self.add_to_player(db, track, position)
             elif isinstance(track, BallEventModel):
                 self.add_to_ball(db, track, position)
@@ -196,7 +194,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             print(f"Error adding to player {track}: {e}")
             raise e
     
-    def add_to_player(self, db: Session, track: PlayerStateModel, position: tuple[float, float]) -> None:
+    def add_to_player(self, db: Session, track: Player, position: tuple[float, float]) -> None:
         try:
             collection = TrackCollectionPlayer(db)
             collection.patch(

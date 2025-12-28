@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 import cv2
 import numpy as np
 from sklearn.cluster import MiniBatchKMeans
-from app.entities.collections.track_collections import TrackCollectionPlayer
-from app.entities.models.PlayerState import PlayerStateModel
+from app.entities.collections import TrackCollectionPlayer
+from app.entities.models.PlayerModels import PlayerState, Player
 from app.entities.utils.singleton import Singleton
 from app.logger import *
 
