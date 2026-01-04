@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from cv2.typing import MatLike
 
-from app.entities.models import PlayerStateModel, BallEventModel
+from app.entities.models import PlayerState, BallEventModel
 from app.entities.utils import Singleton
 from app.logger import debug_logger, error_logger
 from sqlalchemy.orm import Session
@@ -137,7 +137,7 @@ class CameraMovementEstimator(metaclass=Singleton):
         camera_movement_per_frame,
         scale: float,
         pixels_to_meters: float,
-        track: PlayerStateModel | BallEventModel,
+        track: PlayerState | BallEventModel,
         db: Session
     ):
         """
@@ -185,21 +185,26 @@ class CameraMovementEstimator(metaclass=Singleton):
             }
             debug_logger.debug(f"Actualizaciones a aplicar: {updates}")
 
-            if isinstance(track, PlayerStateModel):
+            debug_logger.debug(f"Actualizando track ID {track.id} en la base de datos.")
+            if isinstance(track, PlayerState):
                 from app.entities.collections import TrackCollectionPlayer
                 debug_logger.debug("Usando TrackCollectionPlayer para actualizar el track.")
                 tracks_collection = TrackCollectionPlayer(db)
+                tracks_collection.patch_state(
+                    int(f'{track.player_id}'),
+                    int(f'{track.frame_index}'),
+                    updates)
             elif isinstance(track, BallEventModel):
                 from app.entities.collections import TrackCollectionBall
                 debug_logger.debug("Usando TrackCollectionBall para actualizar el track.")
                 tracks_collection = TrackCollectionBall(db)
-            
+                tracks_collection.patch(
+                    int(f'{track.id}'),
+                    updates)
             if not tracks_collection:
                 error_logger.error("tracks_collection no pudo ser determinado.")
                 raise ValueError("tracks_collection no pudo ser determinado.")
-            
-            debug_logger.debug(f"Actualizando track ID {track.id} en la base de datos.")
-            tracks_collection.patch(int(f'{track.id}'), updates)
+
             debug_logger.debug(f"Posición del track {track.id} ajustada correctamente.")
 
         except Exception as e:

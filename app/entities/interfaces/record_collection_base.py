@@ -57,16 +57,16 @@ class RecordCollectionBase(metaclass=Singleton):
 
     def post(self, obj_data: dict):
         try:
-            print(f"Creando nuevo registro con datos: {obj_data}")
+            print(f"[RecordCollectionBase] Creando nuevo registro con datos: {obj_data}")
             obj = self.orm_model(**obj_data)
             self.db.add(obj)
-            print(f"Objeto añadido a la sesión de la DB: {obj}")
+            print(f"[RecordCollectionBase] Objeto añadido a la sesión de la DB: {obj}")
             self.db.commit()
             self.db.refresh(obj)
-            print(f"Objeto refrescado: {obj}")
+            print(f"[RecordCollectionBase] Objeto refrescado: {obj}")
             return obj
         except Exception as e:
-            print(f"Error al crear registro: {e}")
+            print(f"[RecordCollectionBase] Error al crear registro: {e}")
             self.db.rollback()
             return None
         finally:

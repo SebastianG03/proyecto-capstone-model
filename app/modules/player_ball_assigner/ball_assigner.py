@@ -131,10 +131,15 @@ class BallAssigner:
             payload = {
                 "has_ball": is_owner,
                 "ball_owner_id": self.current_owner if is_owner else None,
-                "ball_possession_time": ball_possession_time
+                "ball_possession_time": ball_possession_time,
+                "ball_x": float(f'{player["ball_x"]}'),
+                "ball_y": float(f'{player["ball_y"]}'),
             }
             debug_logger.debug(f"[BallAssigner] Player {player['player_id']} posee el balón en frame {frame_number} durante {ball_possession_time} segundos.")
-            player_record.patch(player["id"], payload)
+            player_record.patch_state(
+                player_id=int(player["player_id"]),
+                frame_index=frame_number,
+                updates=payload)
 
         return self.current_owner
 

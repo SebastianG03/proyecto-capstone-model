@@ -1,4 +1,3 @@
-# app/modules/services/player_number_recognition_service.py
 
 from typing import Dict, List, Optional
 import numpy as np

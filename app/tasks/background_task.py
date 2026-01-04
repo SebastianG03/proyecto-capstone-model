@@ -1,16 +1,15 @@
 from datetime import datetime, timezone
 import json
-import pathlib
 from sqlalchemy import create_engine
 
-from app.entities.collections import TrackCollectionPlayer
 from app.entities.models.BallState import BallEventModel
-from app.entities.models.PlayerModels import PlayerState, Player
+from app.entities.models.PlayerModels import PlayerState
 from app.modules.services.database import Base
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.tasks.upload import upload
 from app.utils.routes import BASE_RES_DIR, OUTPUT_REPORTS_DIR
+from app.logger import error_logger
 
 async def process_video_async(video_name: str, match_id: int):
     """
@@ -42,23 +41,23 @@ async def process_video_async(video_name: str, match_id: int):
 
 
 async def process_run(db: Session, video_name: str, match_id: int, db_session_factory):
-    
     try:
         from app.tasks.runner import run_analysis
         print("Analisis iniciado...")
         run_analysis(db=db, video_name=video_name, match_id=match_id)
+    except Exception as e:
+        error_logger.error(f"[BACKGROUND_TASK] Error al analizar el video, error: {e}")
+    try:
         print("Exportando datos...")
         await export_data(db, match_id)
         print("Datos exportados.")
+    except Exception as err:
+        error_logger.error(f"[BACKGROUND_TASK] Error al exportar los datos del video, error: {err}")
 
-    except Exception as e:
-        print(f"[ERROR procesando video]: {e}")
-
-    
-async def export_data(db: Session, match_id: int, max_records: int = 100000):
+async def export_data(db: Session, match_id: int, max_records: int = 1000):
     try:
-        player_records = (db.query(PlayerStateModel)
-                .order_by(PlayerStateModel.id)
+        player_records = (db.query(PlayerState)
+                .order_by(PlayerState.id)
                 .limit(max_records)
                 .all())
         ball_records = (db.query(BallEventModel)

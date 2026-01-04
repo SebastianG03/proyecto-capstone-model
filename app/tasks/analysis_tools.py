@@ -7,7 +7,7 @@ from app.modules.speed_and_distance_estimator.speed_and_distance_estimator impor
 from app.modules.player_ball_assigner.player_ball_assigner import PlayerBallAssigner
 from app.modules.camera.camera_movement_estimator import CameraMovementEstimator
 from app.entities.utils.singleton import Singleton
-from app.entities.models import PlayerStateModel, BallEventModel
+from app.entities.models import PlayerState, BallEventModel
 from app.entities.collections import TrackCollectionPlayer, TrackCollectionBall
 from app.modules.services.video_processing_service import FPS_FRAME_RATE
 
@@ -18,7 +18,7 @@ class AnalysisTools(metaclass=Singleton):
 
     def start(self, db: Session, first_frame: MatLike):
         self.player_records = TrackCollectionPlayer(db)
-        self.player_records.orm_model = PlayerStateModel
+        self.player_records.orm_model = PlayerState
         self.ball_records = TrackCollectionBall(db)
         self.ball_records.orm_model = BallEventModel
         self.view_transformer = ViewTransformer()

@@ -1,7 +1,7 @@
 import datetime
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed   # opcional
-from app.entities.models import PlayerStateModel
+from app.entities.models import PlayerState
 from app.tasks.upload import upload_file
 from app.utils.routes import OUTPUT_VIDEOS_DIR
 from sqlalchemy.orm import Session

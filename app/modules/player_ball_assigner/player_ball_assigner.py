@@ -31,7 +31,7 @@ class PlayerBallAssigner():
 
     def assign_ball_to_player(
         self,
-        players: List[PlayerStateModel],
+        players: List[PlayerState],
         ball_event: BallEventModel,
         db: Session,
         dt: float = 1,
@@ -56,6 +56,8 @@ class PlayerBallAssigner():
                     "player_id": int(f'{p.player_id}'),
                     "x": float(f'{p.x}'),
                     "y": float(f'{p.y}'),
+                    "ball_x": float(f'{ball_event.x}'),
+                    "ball_y": float(f'{ball_event.y}'),
                     "ball_possession_time": float(f'{p.ball_possession_time}') if p.ball_possession_time is not None else 0.0,
                     "vx": float(f'{p.speed}') * np.cos(np.deg2rad(45)),
                     "vy": float(f'{p.speed}') * np.sin(np.deg2rad(45))
@@ -87,7 +89,9 @@ class PlayerBallAssigner():
                 is_owner = (int(f'{player.player_id}') == owner_id)
                 payload = {
                     "has_ball": is_owner,
-                    "ball_owner_id": owner_id if is_owner else None
+                    "ball_owner_id": owner_id if is_owner else None,
+                    "ball_x": float(f'{ball_event.x}'),
+                    "ball_y": float(f'{ball_event.y}')
                 }
                 if is_owner:
                     print("[PlayerBallAssigner] Jugador es dueño del balón.")

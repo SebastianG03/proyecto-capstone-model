@@ -86,8 +86,8 @@ class ViewTransformer:
 
         info_logger.info("[ViewTransformer] Transformando posiciones en registros...")
         try:
-            ball_register = ball_collection.get_last(db=db)
-            player_register = player_collection.get_last(db=db)
+            ball_register = ball_collection.get_last()
+            player_register = player_collection.get_last()
             info_logger.info(f"[ViewTransformer] Registro de balon extraido: {ball_register is not None}")
             info_logger.info(f"[ViewTransformer] Registro de jugador extraido: {player_register is not None}")
             if ball_register is not None:
@@ -141,7 +141,7 @@ class ViewTransformer:
 
     def calculate_player_transformed_position(
         self,
-        player_record: PlayerStateModel,
+        player_record: PlayerState,
         db: Session):
         """
         Calcula la posición transformada del jugador en un registro.
@@ -165,8 +165,9 @@ class ViewTransformer:
                 debug_logger.debug("[ViewTransformer] Posición transformada es None, fuera del campo.")
                 return
             player_collection = TrackCollectionPlayer(db)
-            player_collection.patch(
-                int(f'{player_record.id}'),
+            player_collection.patch_state(
+                int(f'{player_record.player_id}'),
+                int(f'{player_record.frame_index}'),
                 {"x_transformed": player_transformed[0],
                 "y_transformed": player_transformed[1]}
             )

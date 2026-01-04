@@ -15,6 +15,9 @@ from app.tasks.analysis_tools import AnalysisTools
 from app.utils.routes import OUTPUT_IMAGES_DIR
 from app.logger import *
 
+global timestamp
+timestamp = 0
+
 def process_frame(
     frame_num: int,
     video_batch: List[tuple[MatLike, float]],
@@ -34,6 +37,7 @@ def process_frame(
     last_frame_taken: dict = {}
     try:
         for frame, dt in video_batch:
+            timestamp = dt
             frame_num += 1
             
             pixels_to_meters = 0.1048
@@ -95,7 +99,7 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 4: Estimando velocidad y distancia del último jugador...")
-                last_player = tools.player_records.get_last(db)
+                last_player = tools.player_records.get_last()
                 if last_player:
                     tools.speed_and_distance.process_track(
                         frame_num=frame_num,
@@ -116,7 +120,7 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 5: Asignando balón a jugador...")
-                players = tools.player_records.get_all()
+                players = tools.player_records.get_all_states()
                 ball_frames = tools.ball_records.get_all()
                 if ball_frames:
                     assign_ball_to_player(
@@ -137,10 +141,14 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 6: Asignando equipo...")
-                last_player = tools.player_records.get_last(db)
+                last_player = tools.player_records.get_last()
                 if last_player:
-                    tools.team_assigner.assign_team_colors(frame=frame, players=tools.player_records.get_all())
-                    tools.team_assigner.get_player_team(frame, last_player, db)
+                    tools.team_assigner.assign_team_colors(frame=frame, players=tools.player_records.get_all_states())
+                    tools.team_assigner.get_player_team(
+                        frame=frame,
+                        frame_num=frame_num,
+                        record=last_player,
+                        db=db)
                 else:
                     info_logger.info("[ProcessRun] No hay último jugador para asignar equipo.")
             except Exception as e:
@@ -151,7 +159,7 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 7: Extrayendo imágenes de jugadores...")
-                last_player = tools.player_records.get_last(db)
+                last_player = tools.player_records.get_last()
                 if not last_player:
                     info_logger.info(f"[ProcessRun] No hay jugador para extraer imágenes, se continúa.")
                     continue
@@ -183,8 +191,8 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 8: Exportando datos del frame...")
-                last_player = tools.player_records.get_last(db)
-                ball_frame = tools.ball_records.get_last(db)
+                last_player = tools.player_records.get_last()
+                ball_frame = tools.ball_records.get_last()
                 snapshot = tracemalloc.take_snapshot()
                 total_mem = sum(stat.size for stat in snapshot.statistics("lineno")) / (1024 * 1024)
                 export_data = {

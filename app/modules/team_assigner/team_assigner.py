@@ -134,7 +134,7 @@ class TeamAssigner(metaclass=Singleton):
     # ---------------------------
     # Bootstrap (one-shot) de colores de equipo
     # ---------------------------
-    def bootstrap_colors(self, frame: MatLike, players: List[PlayerStateModel]) -> bool:
+    def bootstrap_colors(self, frame: MatLike, players: List[PlayerState]) -> bool:
         """
         Entrena MiniBatchKMeans una sola vez cuando haya suficientes colores válidos.
         players: lista de PlayerStateModel con bbox disponible
@@ -183,7 +183,7 @@ class TeamAssigner(metaclass=Singleton):
     # ---------------------------
     # API principal (manteniendo nombre de la clase)
     # ---------------------------
-    def assign_team_colors(self, frame: MatLike, players: List[PlayerStateModel]) -> None:
+    def assign_team_colors(self, frame: MatLike, players: List[PlayerState]) -> None:
         """
         Método principal: intenta bootstrap si no hay modelo; no reentrena si ya existe.
         """
@@ -193,7 +193,7 @@ class TeamAssigner(metaclass=Singleton):
             self.bootstrap_colors(frame, players)
         # Aquí podrías actualizar cache, smoothing o predicciones por frame
 
-    def get_player_team(self, frame: MatLike, record: PlayerStateModel, db: Session):
+    def get_player_team(self, frame: MatLike, record: PlayerState, frame_num: int, db: Session):
         """
         Devuelve 1, 2 o -1. Utiliza smoothing temporal por jugador
         para evitar saltos por recortes malos.
@@ -222,7 +222,7 @@ class TeamAssigner(metaclass=Singleton):
             debug_logger.debug("[Team Assigner] Checking KMeans model...")
             if self.kmeans is None:
                 debug_logger.debug("[Team Assigner] KMeans not initialized yet when predicting team.")
-                self.assign_team_colors(frame=frame, players=player_record.get_all())
+                self.assign_team_colors(frame=frame, players=player_record.get_all_states())
                 debug_logger.debug("[Team Assigner] After attempting bootstrap.")
 
             debug_logger.debug("[Team Assigner] Extracting player color...")
@@ -258,14 +258,19 @@ class TeamAssigner(metaclass=Singleton):
             self.player_team_cache[player_id] = int(team)
             debug_logger.debug(f"[Team Assigner] Team selected: {team} y color selected: {self.team_colors.get(team)}")
             color = self.team_colors.get(team) if team in self.team_colors else None
+            player_data = player_record.get_player(int(f'{record.player_id}'))
+            if not player_data:
+                raise ValueError(f"[Team Assigner] No se obtuvo el jugador con player id {record.player_id}")
+            
+            debug_logger.debug(f"[Team Assigner] Datos del jugador obtenido: {player_data.to_dict()}")
             player_record.patch(
-                player_id,
+                int(f'{player_data.id}'),
                 {
                     "team": team,
                     "color": json.dumps(color.tolist()) if color is not None and color.any() else None
                 }
             )
-            debug_logger.debug(f"[Team Assigner] Equipo asignado al jugador {player_id}: {team}")
+            debug_logger.debug(f"[Team Assigner] Equipo asignado al jugador {player_id}, con id {player_data.id}: {team}")
             return int(team)
         except Exception as e:
             error_logger.error(f"[Team Assigner] Error predicting team: {e}")

@@ -1,10 +1,6 @@
 from typing import Dict
 
-from app.modules.plotting.drawers import (
-    BallDetectionMetricsDrawer, BallTrajectoryDrawer, HeatmapDrawer,
-    InterpolationErrorDrawer, VelocityConsistencyDrawer, VoronoiDiagramDrawer)
-from app.modules.plotting.services import \
-    DrawerFactory
+from app.modules.plotting.drawers import HeatmapDrawer
 from sqlalchemy.orm import Session
 
 def generate_diagrams(db: Session, positions: Dict) -> None:

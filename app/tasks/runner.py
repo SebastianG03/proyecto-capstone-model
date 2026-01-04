@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import time
 import tracemalloc
 from typing import List
@@ -56,8 +57,9 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     # video_name = "fb64992c-0a84-4fb5-8c3c-42f4ddbfda1c-1_720p.mkv"
 
     print(f"Descargando video {video_name}...")
-    download_path = downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
-    downloader.stream_download(key=video_name, destination_path=download_path.as_posix())
+    download_path = Path(INPUT_VIDEOS_DIR, "f8d957c1-0942-4734-8737-acadb7578702_08fd33_4.mp4")
+    #downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
+    #downloader.stream_download(key=video_name, destination_path=download_path.as_posix())
     print(f"Video descargado en {INPUT_VIDEOS_DIR.as_posix()}")
     print(f"Video descargado en {download_path.as_posix()}")
 

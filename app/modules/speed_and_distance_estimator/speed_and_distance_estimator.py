@@ -79,7 +79,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         self,
         frame_num: int,
         track_id: int,
-        track: PlayerStateModel,
+        track: PlayerState,
         pixels_to_meters: float,
         camera_scale: float,
         dt: float,
@@ -190,8 +190,6 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             debug_logger.debug(f"[SpeedAndDistance] ¿Está sprintando el track {track_id}? {'Sí' if is_sprint else 'No'}")
             # Persistencia
             data_updated = {
-                "player_id": track_id,
-                "frame_index": frame_num,
                 "x_smoothed": float(smoothed_pos[0]),
                 "y_smoothed": float(smoothed_pos[1]),
                 "speed": float(smooth_speed_kmh),
@@ -202,7 +200,9 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             }
 
             player_collection = TrackCollectionPlayer(db)
-            res = player_collection.patch(int(f'{track.id}'), data_updated)
+            res = player_collection.patch_state(
+                int(f'{track.player_id}'),
+                int(f'{track.frame_index}'), data_updated)
             debug_logger.debug(f"[SpeedAndDistance] Track {track_id} actualizado en DB: {res}")
         except Exception as e:
             error_logger.error(f"[SpeedAndDistance] Error procesando track {track}: {e}")

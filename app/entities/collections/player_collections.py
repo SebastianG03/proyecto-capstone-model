@@ -1,4 +1,4 @@
-from typing import List, override
+from typing import List, Type, override
 
 from polars import first
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
@@ -6,23 +6,33 @@ from app.entities.models import Player, PlayerState
 
 
 class TrackCollectionPlayer(RecordCollectionBase):
+    orm_model = PlayerState
 
     @override
     def generate_id(self, obj):
         return obj.track_id
 
     @override
-    def get_last(self) -> Player | None:
-        return self.db.query(Player).order_by(Player.id.desc()).first()
+    def get_last(self) -> PlayerState | None:
+        return (self.db.query(PlayerState)
+                .order_by(PlayerState.id.desc())
+                .first())
 
-    def get_last_state(self, player_id: int) -> PlayerState | None:
+    def get_last_player(self, player_id: int) -> PlayerState | None:
         return (self.db.query(PlayerState)
                 .filter(PlayerState.player_id == player_id)
-                .order_by(PlayerState.frame_index.desc())
+                .order_by(PlayerState.timestamp_ms.desc())
                 .first())
 
     def get_player(self, player_id: int) -> Player | None:
-        return self.db.query(Player).filter(Player.player_id == player_id).first()
+        return (self.db.query(Player).filter(Player.player_id == player_id)).first()
+
+    def get_player_id(self, player_id: int) -> int | None:
+        query = (self.db.query(Player.id).filter(Player.player_id == player_id)).first()
+        if not query:
+            return -1
+        value = query.tuple()
+        return value[0]
 
     def get_player_states(self, player_id: int) -> List[PlayerState]:
         return (self.db.query(PlayerState)
@@ -99,3 +109,21 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return None
         finally:
             print(f'Elementos actuales en base de datos PlayerState: ', len(self.get_all_states()))
+
+    @override
+    def post(self, obj_data: dict):
+        try:
+            print(f"[TrackCollectionPlayer] Creando nuevo registro con datos: {obj_data}")
+            obj = Player(**obj_data)
+            self.db.add(obj)
+            print(f"[TrackCollectionPlayer] Objeto añadido a la sesión de la DB: {obj}")
+            self.db.commit()
+            self.db.refresh(obj)
+            print(f"[TrackCollectionPlayer] Objeto refrescado: {obj}")
+            return obj
+        except Exception as e:
+            print(f"[TrackCollectionPlayer] Error al crear registro: {e}")
+            self.db.rollback()
+            return None
+        finally:
+            print(f'[TrackCollectionPlayer] Elementos actuales en base de datos {self.orm_model.__name__}: ', len(self.get_all()))

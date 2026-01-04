@@ -1,14 +1,14 @@
 from typing import List
 from sqlalchemy.orm import Session
 
-from app.entities.collections.track_collections import TrackCollectionPlayer
-from app.entities.models import PlayerStateModel, BallEventModel
+from app.entities.collections import TrackCollectionPlayer 
+from app.entities.models import PlayerState, BallEventModel
 from app.tasks.analysis_tools import AnalysisTools
 
 
 def assign_ball_to_player(
     ball_records: List[BallEventModel],
-    players: List[PlayerStateModel],
+    players: List[PlayerState],
     tools: AnalysisTools,
     dt: float,
     frame_index: int,
@@ -16,7 +16,6 @@ def assign_ball_to_player(
 ):
     try:
         print("Iniciando asignación de balón a jugador...")
-        player_records = TrackCollectionPlayer(db)
         print("Colección de jugadores obtenida. Longitud actual: ", len(players))
         print("Iterando sobre registros de balón, registros actuales en colección: ", len(ball_records))
         for ball_track in ball_records:

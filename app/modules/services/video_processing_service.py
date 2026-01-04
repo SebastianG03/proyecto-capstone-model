@@ -6,7 +6,7 @@ import cv2
 from cv2.typing import MatLike
 
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
-from app.entities.models import PlayerStateModel
+from app.entities.models.PlayerModels import PlayerState
 from app.logger import debug_logger, info_logger
 
 global FPS_FRAME_RATE
@@ -62,7 +62,7 @@ def read_video(video_path: str, batch_size: int = 16) -> Generator[List[tuple[Ma
 def extract_player_images(
     frame: MatLike,
     frame_index: int,
-    player: PlayerStateModel,
+    player: PlayerState,
     output_folder: str,
     player_image_counts: dict, 
     last_frame_taken: dict,
