@@ -1,6 +1,3 @@
-# ------------------------------------------------------------------------------
-# HeatmapDrawer «solo-BD»  –  2024-01  (re-escritura)
-# ------------------------------------------------------------------------------
 from pathlib import Path
 from typing import Dict, List, Optional, Set, override
 import numpy as np
@@ -22,7 +19,7 @@ class HeatmapDrawer(Diagram):
     discontinuidades en el KDE.
     """
 
-    def __init__(self, db: Session, positions: Dict[int, List[Optional[np.ndarray]]]):
+    def __init__(self, db: Session):
         """
         Inicializa la clase HeatmapDrawer.
 
@@ -37,8 +34,6 @@ class HeatmapDrawer(Diagram):
         base = OUTPUT_VIDEOS_DIR
         self.save_path = base
         self.players_path = base / "players"
-        # positions no se usa ya, pero se recibe por compatibilidad
-        self.positions_history: Dict[int, List[Optional[np.ndarray]]] = {}
 
         for p in [base, self.players_path]:
             p.mkdir(parents=True, exist_ok=True)
@@ -203,24 +198,37 @@ class HeatmapDrawer(Diagram):
     def _draw_single_heatmap(self, pid: int, team: str, df: pd.DataFrame):
         """
         Dibuja un heatmap para un solo jugador y equipo.
-        
-        :param pid: identificador del usuario
-        :param team: equipo del usuario (1 o 2)
-        :param df: DataFrame con los datos de posición del usuario
         """
-        
+        # ---------- 1) depuración ----------
+        print(f"  jugador {pid}  n={len(df)}  "
+            f"x∈[{df.x.min():.1f}, {df.x.max():.1f}]  "
+            f"y∈[{df.y.min():.1f}, {df.y.max():.1f}]")
+
+        # ---------- 2) recortar al campo ----------
+        PITCH_X, PITCH_Y = [0, 120], [0, 80]
+        df = df[df.x.between(PITCH_X[0], PITCH_X[1]) & df.y.between(PITCH_Y[0], PITCH_Y[1])]
+        if df.empty:
+            print("  ↳ ninguna coordenada dentro del campo – skip")
+            return
+
+        # ---------- 3) evitar desvío nulo ----------
+        if df.x.nunique() == 1 or df.y.nunique() == 1:
+            print("  ↳ todos los puntos idénticos – skip")
+            return
+
         fig, ax, pitch = self._draw_pitch()
 
-        levels = min(60, max(10, len(df) // 2))
+        # ---------- 4) bw dinámico ----------
+        bw = max(0.5, 4 / np.sqrt(len(df)))
         pitch.kdeplot(
-            df["x"],
-            df["y"],
+            df.x,
+            df.y,
             ax=ax,
             cmap="viridis",
             fill=True,
             alpha=0.6,
-            levels=levels,
-            bw_adjust=0.3,
+            levels=30,
+            bw_adjust=bw,
         )
 
         out_file = self.players_path / f"heatmap_player_{pid}_team_{team}.png"

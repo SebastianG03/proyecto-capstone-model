@@ -127,3 +127,30 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return None
         finally:
             print(f'[TrackCollectionPlayer] Elementos actuales en base de datos {self.orm_model.__name__}: ', len(self.get_all()))
+
+    @override
+    def patch(self, obj_id: int, updates: dict):
+        try:
+            print(f"[TrackCollectionPlayer] Actualizando registro ID {obj_id} con {updates}")
+            obj = self.db.query(Player).filter(Player.id == obj_id).first()
+            if not obj:
+                print(f"[TrackCollectionPlayer] Registro con ID {obj_id} no encontrado.")
+                return None
+
+            print(f"[TrackCollectionPlayer] Objeto encontrado: {obj}")
+            for key, val in updates.items():
+                print(f"[TrackCollectionPlayer] Actualizando campo {key} con valor {val}")
+                if hasattr(obj, key):
+                    setattr(obj, key, val)
+
+            self.db.commit()
+            print(f"[TrackCollectionPlayer] Objeto actualizado: {obj}")
+            self.db.refresh(obj)
+            print(f"[TrackCollectionPlayer] Objeto refrescado: {obj}")
+            return obj
+        except Exception as e:
+            print(f"[TrackCollectionPlayer] Error al actualizar registro: {e}")
+            self.db.rollback()
+            return None
+        finally:
+            print(f'[TrackCollectionPlayer] Elementos actuales en base de datos {self.orm_model.__name__}: ', len(self.get_all()))    

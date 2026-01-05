@@ -3,7 +3,7 @@ import json
 from sqlalchemy import create_engine
 
 from app.entities.models.BallState import BallEventModel
-from app.entities.models.PlayerModels import PlayerState
+from app.entities.models.PlayerModels import Player, PlayerState
 from app.modules.services.database import Base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -54,12 +54,13 @@ async def process_run(db: Session, video_name: str, match_id: int, db_session_fa
     except Exception as err:
         error_logger.error(f"[BACKGROUND_TASK] Error al exportar los datos del video, error: {err}")
 
-async def export_data(db: Session, match_id: int, max_records: int = 1000):
+async def export_data(db: Session, match_id: int, max_records: int = 100000):
     try:
         player_records = (db.query(PlayerState)
                 .order_by(PlayerState.id)
                 .limit(max_records)
                 .all())
+        players = (db.query(Player).all())
         ball_records = (db.query(BallEventModel)
                 .order_by(BallEventModel.id)
                 .limit(max_records)
@@ -77,7 +78,12 @@ async def export_data(db: Session, match_id: int, max_records: int = 1000):
             ball_export_data.append(record.to_dict())
         
         for i, record in enumerate(player_records):
-            player_export_data.append(record.to_dict())
+            player = next((p for p in players if f'{p.player_id}' == f'{record.player_id}'), None)
+            if not player:
+                continue
+            dict_values = record.to_dict()
+            dict_values.update({"team": player.team, "shirt_number": player.shirt_number, "color": player.color})
+            player_export_data.append(dict_values)
             if (i + 1 ) % 1000 == 0:
                 print(f"Exportados {i + 1} registros de PlayerState...")
         print("Exportación de datos completada.")

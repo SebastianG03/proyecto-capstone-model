@@ -1,6 +1,7 @@
 from datetime import datetime,timezone
 from sqlalchemy import (Boolean, Column, Integer, Float,
-                        String, ForeignKey, DateTime, Index)
+                        String, ForeignKey, Index)
+from sqlalchemy.dialects.sqlite import DATETIME
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.modules.services.database import Base
@@ -21,10 +22,12 @@ class Player(Base):
     shirt_number = Column(Integer, nullable=True, default=None)
 
     # --- timestamps de auditoría --------------------------------------------
-    created_at = Column(DateTime(timezone=True),
+    created_at = Column(DATETIME(timezone=True),
                         server_default=func.now())
-    updated_at = Column(
-        DateTime(timezone=True), server_onupdate=func.now())
+    updated_at = Column(DATETIME(timezone=True),
+                    nullable=False,
+                    default=datetime.now(timezone.utc),
+                    onupdate=datetime.now(timezone.utc))
 
     # relación 1-N con sus estados
     states = relationship("PlayerState", back_populates="player")
@@ -97,7 +100,7 @@ class PlayerState(Base):
     timestamp_ms = Column(Float, index=True, nullable=True)
 
     # --- timestamp de inserción ----------------------------------------------
-    created_at = Column(DateTime(timezone=True),
+    created_at = Column(DATETIME(timezone=True),
                         default=datetime.now(timezone.utc))
 
     # --- relación inversa ----------------------------------------------------

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.entities.interfaces.tracker_base import Tracker
 from app.entities.collections import TrackCollectionPlayer
+from app.entities.utils.global_values_store import GlobalValuesStore
 from app.logger import debug_logger, info_logger, error_logger
 
 class PlayerTracker(Tracker):
@@ -92,7 +93,7 @@ class PlayerTracker(Tracker):
 
             cx, cy = self._bbox_to_center(bbox_list)
             info_logger.info(f"Bbox jugador {track_id} {bbox_list} centro ({cx}, {cy})")
-            from app.tasks.analysis import timestamp
+            timestamp = GlobalValuesStore().timestamp
             info_logger.info(f"[PlayerTracker] Timestamp: {timestamp}")
             payload = {
                 "player_id": track_id,

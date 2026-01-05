@@ -1,11 +1,14 @@
 import json
 from pathlib import Path
+import time
 import tracemalloc
 from typing import List
 from cv2.typing import MatLike
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.entities.models.PlayerModels import Player, PlayerState
+from app.entities.utils.global_values_store import GlobalValuesStore
 from app.modules.services.video_processing_service import extract_player_images
 from app.modules.trackers.tracker_service import TrackerService
 from app.tasks.analysis.assign_ball import assign_ball_to_player
@@ -14,9 +17,6 @@ from app.modules.services.bbox_processor_service import calculate_area_boundary_
 from app.tasks.analysis_tools import AnalysisTools
 from app.utils.routes import OUTPUT_IMAGES_DIR
 from app.logger import *
-
-global timestamp
-timestamp = 0
 
 def process_frame(
     frame_num: int,
@@ -35,11 +35,15 @@ def process_frame(
     """
     player_image_counts: dict = {}
     last_frame_taken: dict = {}
+    start_time = time.time()
+    globals = GlobalValuesStore()
+    info_logger.info(f"[ProcessRun] Iniciando procesamiento de lote de frames en timestamp {start_time}")
     try:
-        for frame, dt in video_batch:
-            timestamp = dt
+        for frame, _ in video_batch:
+            actual_time = time.time()
+            dt = actual_time - start_time
+            globals.update(timestamp=dt)
             frame_num += 1
-            
             pixels_to_meters = 0.1048
             area_boundarys = calculate_area_boundary_ends(frame)
             if area_boundarys is not None:
@@ -141,6 +145,12 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 6: Asignando equipo...")
+                state = db.query(PlayerState).order_by(PlayerState.id.desc()).first()
+                
+                if state is None:
+                    info_logger.info("[ProcessRun] No hay estado de jugador para asignar equipo.")
+                    continue
+
                 last_player = tools.player_records.get_last()
                 if last_player:
                     tools.team_assigner.assign_team_colors(frame=frame, players=tools.player_records.get_all_states())
@@ -153,6 +163,27 @@ def process_frame(
                     info_logger.info("[ProcessRun] No hay último jugador para asignar equipo.")
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error asignando equipo: {e}")
+
+            try:
+                info_logger.info("[ProcessRun] Iniciando el reconocimiento del numero del jugador")
+                last_player = tools.player_records.get_last()
+                info_logger.info("[ProcessRun] Ultimo estado del jugador obtenido")
+                if last_player is not None:
+                    player_number = tools.number_recognizer.predict(frame, last_player.get_bbox())
+                    info_logger.info(f"[ProcessRun] Numero predecido, resultado: {player_number}")
+
+                    if player_number is not None:
+                        info_logger.info(f"[ProcessRun] Paso 7: Reconociendo número de jugador: {player_number}")
+                        tools.player_records.patch(
+                            int(f'{last_player.id}'),
+                            {
+                                "shirt_number": player_number
+                            }
+                        )
+                else:
+                    info_logger.info("[ProcessRun] No hay último jugador para reconocer número.")
+            except Exception as e:
+                error_logger.error(f"[Frame {frame_num}] Error reconociendo número de jugador: {e}")
 
             # -------------------------------------------------------
             # 7. EXTRAER IMÁGENES

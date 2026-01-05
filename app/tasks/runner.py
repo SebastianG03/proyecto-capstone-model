@@ -54,12 +54,12 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     # Descarga video
     downloader = R2Downloader()
     
-    # video_name = "fb64992c-0a84-4fb5-8c3c-42f4ddbfda1c-1_720p.mkv"
+    video_name = "fb64992c-0a84-4fb5-8c3c-42f4ddbfda1c-1_720p.mkv"
 
     print(f"Descargando video {video_name}...")
-    download_path = Path(INPUT_VIDEOS_DIR, "f8d957c1-0942-4734-8737-acadb7578702_08fd33_4.mp4")
-    #downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
-    #downloader.stream_download(key=video_name, destination_path=download_path.as_posix())
+    download_path = Path(INPUT_VIDEOS_DIR, video_name)
+    downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
+    downloader.stream_download(key=video_name, destination_path=download_path.as_posix())
     print(f"Video descargado en {INPUT_VIDEOS_DIR.as_posix()}")
     print(f"Video descargado en {download_path.as_posix()}")
 
@@ -135,7 +135,7 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> None:
 
     info_logger.info(f"Jugadores con imágenes extraídas {saved_player_ids}")
     
-    generate_diagrams(db, tools.speed_and_distance.position_history)
+    generate_diagrams(db)
     info_logger.info("Diagramas generados.")
     upload_heatmaps_for_extracted_players(db=db, match_id=match_id, extracted_player_ids=set(saved_player_ids))
     info_logger.info("Heatmaps subidos.")

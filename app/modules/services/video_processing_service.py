@@ -7,18 +7,17 @@ from cv2.typing import MatLike
 
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
 from app.entities.models.PlayerModels import PlayerState
+from app.entities.utils.global_values_store import GlobalValuesStore
 from app.logger import debug_logger, info_logger
-
-global FPS_FRAME_RATE
-FPS_FRAME_RATE = 30.0
 
 def read_video(video_path: str, batch_size: int = 16) -> Generator[List[tuple[MatLike, float]]]:
     print(f"Abriendo video para lectura: {video_path}...")
     cap = cv2.VideoCapture(video_path)
     frame_rate = cap.get(cv2.CAP_PROP_FPS)
-    if frame_rate != FPS_FRAME_RATE:
-        info_logger.info(f"[ReadVideo] Frame rate detectado: {frame_rate} FPS. Ajustando a {FPS_FRAME_RATE} FPS para consistencia.")
-        frame_rate = FPS_FRAME_RATE
+    globals = GlobalValuesStore()
+    if frame_rate != globals.fps:
+        info_logger.info(f"[ReadVideo] Frame rate detectado: {frame_rate} FPS. Ajustando a valor global de FPS para consistencia.")
+        globals.update(fps=frame_rate)
 
     try:
         if not cap.isOpened():
