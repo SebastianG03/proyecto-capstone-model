@@ -17,6 +17,10 @@ class GlobalValuesStore(metaclass=Singleton):
         """
         self._timestamp: float = float(timestamp)
         self._fps: float = float(fps)
+        self.MAX_HUMAN_SPEED_KMH = 25.0
+        self.MAX_ACCEL_MS2 = 6.0
+        self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24 #fps
+        self.MIN_DT_S = 1.0 / (2 * 24)
 
     # --- Getters ---
     @property
@@ -28,6 +32,26 @@ class GlobalValuesStore(metaclass=Singleton):
     def fps(self) -> float:
         """Devuelve el valor actual de los fps."""
         return self._fps
+
+    @property
+    def max_human_speed_kmh(self) -> float:
+        """Devuelve el valor actual de la velocidad máxima de un humano en km/h."""
+        return self.MAX_HUMAN_SPEED_KMH
+
+    @property
+    def max_accel_ms2(self) -> float:
+        """Devuelve el valor actual de la aceleración máxima de un humano en m/s^2."""
+        return self.MAX_ACCEL_MS2
+
+    @property
+    def max_dist_per_frame_m(self) -> float:
+        """Devuelve el valor actual de la distancia máxima por frame en metros."""
+        return self.MAX_DIST_PER_FRAME_M
+
+    @property
+    def min_dt_s(self) -> float:
+        """Devuelve el valor actual del tiempo mínimo entre frames en segundos."""
+        return self.MIN_DT_S
 
     # --- Setters individuales ---
     @timestamp.setter
@@ -50,6 +74,8 @@ class GlobalValuesStore(metaclass=Singleton):
             self._timestamp = float(timestamp)
         if fps is not None:
             self._fps = float(fps)
+            self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24
+            self.MIN_DT_S = 1.0 / (2 * 24)
 
     # --- Representación legible ---
     def __repr__(self) -> str:

@@ -1,4 +1,3 @@
-
 from asyncio.log import logger
 from typing import List
 from sqlalchemy.orm import Session
@@ -39,41 +38,46 @@ class PlayerBallAssigner():
         frame_number: int = 0
         ) -> int:
         try:
-            print("[PlayerBallAssigner] assign_ball_to_player llamado en frame ", frame_number)
-            player_record = TrackCollectionPlayer(db)
-            # 1. Crear ball_state (compatibilidad con Kalman)
-            ball_bbox = ball_event.get_bbox() if ball_event else None
-            if not ball_bbox or len(ball_bbox) < 4:
-                print("[PlayerBallAssigner] No hay bbox de balón válido.")
+            if not ball_event or ball_event.x is None or ball_event.y is None:
                 return -1
 
-            print(f"[PlayerBallAssigner] ball_bbox: {ball_bbox}")
+            # Calcular velocidades reales basadas en posiciones consecutivas
+            players_dict = []
+            for p in players:
+                if p.x is not None and p.y is not None:
+                    # Calcular velocidad real si hay datos históricos
+                    vx, vy = 0.0, 0.0
+                    if hasattr(p, 'prev_x') and hasattr(p, 'prev_y') and p.prev_x is not None and p.prev_y is not None:
+                        vx = (p.x - p.prev_x) / dt if dt > 0 else 0.0
+                        vy = (p.y - p.prev_y) / dt if dt > 0 else 0.0
+                    elif p.speed is not None and float(f'{p.speed}') > 0:
+                        # Usar dirección anterior si existe
+                        if hasattr(p, 'prev_direction') and p.prev_direction is not None:
+                            vx = p.speed * np.cos(p.prev_direction)
+                            vy = p.speed * np.sin(p.prev_direction)
+                        else:
+                            vx = p.speed * 0.5  # Dirección por defecto
+                            vy = p.speed * 0.5
+                    
+                    players_dict.append({
+                        "id": int(f'{p.id}'),
+                        "player_id": int(f'{p.player_id}'),
+                        "x": float(f'{p.x}'),
+                        "y": float(f'{p.y}'),
+                        "ball_x": float(f'{ball_event.x}'),
+                        "ball_y": float(f'{ball_event.y}'),
+                        "ball_possession_time": float(f'{p.ball_possession_time}') if p.ball_possession_time is not None else 0.0,
+                        "vx": vx,
+                        "vy": vy
+                    })
 
-            # 3. Convertir PlayerStateModel → dict ligero
-            players_dict = [
-                {
-                    "id": int(f'{p.id}'),
-                    "player_id": int(f'{p.player_id}'),
-                    "x": float(f'{p.x}'),
-                    "y": float(f'{p.y}'),
-                    "ball_x": float(f'{ball_event.x}'),
-                    "ball_y": float(f'{ball_event.y}'),
-                    "ball_possession_time": float(f'{p.ball_possession_time}') if p.ball_possession_time is not None else 0.0,
-                    "vx": float(f'{p.speed}') * np.cos(np.deg2rad(45)),
-                    "vy": float(f'{p.speed}') * np.sin(np.deg2rad(45))
-                }
-                for p in players if p.x is not None and p.y is not None and p.speed is not None
-            ]
             ball_state = {
                 "x": float(f'{ball_event.x}'),
                 "y": float(f'{ball_event.y}'),
-                "vx": float(f'{ball_event.vx}'),
-                "vy": float(f'{ball_event.vy}')
+                "vx": float(f'{ball_event.vx}') if ball_event.vx is not None else 0.0,
+                "vy": float(f'{ball_event.vy}') if ball_event.vy is not None else 0.0
             }
 
-            # 4. Asignación con lógica nueva
-            print(f"[PlayerBallAssigner] players_dict: {players_dict}")
-            print("Actualizando instancia de BallAssigner...")
             owner_id = self.ball_assigner.update(
                 ball_state=ball_state,
                 players=players_dict,
@@ -82,60 +86,24 @@ class PlayerBallAssigner():
                 scale=scale,
                 frame_number=frame_number
             )
-            print(f"[PlayerBallAssigner] owner_id determinado: {owner_id}")
 
+            # Actualizar estados de jugadores
             for player in players:
-                print(f"[PlayerBallAssigner] player: {player}")
                 is_owner = (int(f'{player.player_id}') == owner_id)
+                possession_time = self.ball_assigner.get_possession_time(int(f'{player.player_id}'))
+                
                 payload = {
                     "has_ball": is_owner,
                     "ball_owner_id": owner_id if is_owner else None,
                     "ball_x": float(f'{ball_event.x}'),
-                    "ball_y": float(f'{ball_event.y}')
+                    "ball_y": float(f'{ball_event.y}'),
+                    "ball_possession_time": possession_time
                 }
-                if is_owner:
-                    print("[PlayerBallAssigner] Jugador es dueño del balón.")
-                    # acumular tiempo (fps puede venir de config)
-                    payload["ball_possession_time"] = (float(f'{player.ball_possession_time}') or 0.0) + dt
-            # 6. Devolver mismo tipo que antes
-                print(f"[PlayerBallAssigner] payload: {payload}")
+                player_record = TrackCollectionPlayer(db)
                 player_record.patch(int(f'{player.id}'), payload)
-                print(f"[PlayerBallAssigner] Player {player.player_id} updated: {payload}")
+
             return owner_id if owner_id is not None else -1
 
         except Exception as e:
             logger.exception("Error en PlayerBallAssigner: ", exc_info=e)
-            print(f"Error en PlayerBallAssigner: {e}")
             return -1
-
-    # def assign_ball_to_player(
-    #         self,
-    #         players: List[PlayerStateModel],
-    #         ball_bbox):
-    #     try:
-    #         ball_position = get_center_of_bbox(ball_bbox)
-
-    #         min_distance = float('inf')
-    #         closest_player_id = -1
-            
-    #         for player in players:
-    #             bbox = player.get_bbox()
-
-    #             if not bbox or len(bbox) < 4:
-    #                 continue
-
-    #             left_foot  = (bbox[0], bbox[3])
-    #             right_foot = (bbox[2], bbox[3])
-
-    #             dist_left  = measure_scalar_distance(left_foot, ball_position)
-    #             dist_right = measure_scalar_distance(right_foot, ball_position)
-    #             distance   = min(dist_left, dist_right)
-
-    #             if distance < self.maximum_player_ball_distance and distance < min_distance:
-    #                 min_distance = distance
-    #                 closest_player_id = player.to_dict()['id']
-
-    #         return closest_player_id
-    #     except Exception as e:
-    #         print(f"Error asignando balón a jugador: {e}")
-    #         raise e

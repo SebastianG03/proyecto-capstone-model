@@ -5,8 +5,7 @@ from typing import Generator, List
 import cv2
 from cv2.typing import MatLike
 
-from app.entities.interfaces.record_collection_base import RecordCollectionBase
-from app.entities.models.PlayerModels import PlayerState
+from app.entities.models.PlayerModels import Player, PlayerState
 from app.entities.utils.global_values_store import GlobalValuesStore
 from app.logger import debug_logger, info_logger
 
@@ -61,7 +60,8 @@ def read_video(video_path: str, batch_size: int = 16) -> Generator[List[tuple[Ma
 def extract_player_images(
     frame: MatLike,
     frame_index: int,
-    player: PlayerState,
+    player_state: PlayerState,
+    player: Player,
     output_folder: str,
     player_image_counts: dict, 
     last_frame_taken: dict,
@@ -69,20 +69,26 @@ def extract_player_images(
     frame_skip: int = 5,
 ):
     """
-    Extrae imágenes de torso/cara de jugadores PARA EL FRAME ACTUAL.
-    Esta función debe llamarse en cada iteración del lector de video.
-
-    :param frame: Frame actual del video
-    :param frame_index: Índice del frame actual
-    :param records: Lista de records del frame actual (track_id, bbox, etc.)
-    :param output_folder: Carpeta de salida
-    :param images_per_player: Máximo de imágenes por jugador
-    :param frame_skip: Diferencia mínima entre capturas del mismo jugador
-    :param player_image_counts: Mapa acumulado {player_id: cantidad}
-    :param last_frame_taken: Mapa {player_id: ultimo_frame_guardado}
+    Extrae una imagen de un jugador del frame actual y la guarda en un directorio especificado.
+    
+    Parameters:
+    frame (MatLike): El frame actual del video.
+    frame_index (int): El índice del frame actual en el video.
+    player_state (PlayerState): El estado actual del jugador en el frame.
+    player (Player): El objeto Player del usuario.
+    output_folder (str): La ruta del directorio donde se guardan las imágenes.
+    player_image_counts (dict): Un diccionario que mantiene la cantidad de imágenes extraídas por cada jugador.
+    last_frame_taken (dict): Un diccionario que mantiene el último frame procesado por cada usuario.
+    images_per_player (int): La cantidad de imágenes que se quieren extraer por cada usuario.
+    frame_skip (int): La cantidad de frames que se salta entre cada imagen extraída.
+    
+    Returns:
+    player_image_counts (dict): El diccionario actualizado con la cantidad de imágenes extraídas por cada usuario.
+    last_frame_taken (dict): El diccionario actualizado con el último frame procesado por cada usuario.
+    player_id (int): El ID del usuario que se ha extraído la imagen. Si no se ha extraído nada, devuelve None.
     """
     try:
-        debug_logger.debug(f"[Extract Player Images] Extrayendo imagen de jugador {player.to_dict().get('player_id', None)} en frame {frame_index}...")
+        debug_logger.debug(f"[Extract Player Images] Extrayendo imagen de jugador {player_state.to_dict().get('player_id', None)} en frame {frame_index}...")
         folder = pathlib.Path(output_folder)
         folder.mkdir(parents=True, exist_ok=True)
 
@@ -98,12 +104,13 @@ def extract_player_images(
         h, w = frame.shape[:2]
 
         # Procesar solo records del frame actual
-        debug_logger.debug(f"[Extract Player Images] Procesando jugador: {player.to_dict()}")
-        record = player.to_dict()
-        player_id: int = int(record.get("player_id", -1))
-        player_team = record.get("team", "unknown")
-        player_color = record.get("color", "unknown")
-        bbox = player.get_bbox()
+        debug_logger.debug(f"[Extract Player Images] Procesando jugador: {player_state.to_dict()}")
+        state_record = player_state.to_dict()
+        player_record = player.to_dict() if player else {}
+        player_id: int = int(state_record.get("player_id", -1))
+        player_team = player_record.get("team", "unknown")
+        player_color = player_record.get("color", "unknown")
+        bbox = player_state.get_bbox()
         
         if player_id == -1:
             debug_logger.debug("[Extract Player Images] Player ID inválido.")
@@ -161,5 +168,5 @@ def extract_player_images(
 
         return player_image_counts, last_frame_taken, player_id
     except Exception as e:
-        print(f"Error extrayendo imagen de jugador { player.to_dict().get('player_id', None) } en frame {frame_index}: {e}")
+        print(f"Error extrayendo imagen de jugador { player_state.to_dict().get('player_id', None) } en frame {frame_index}: {e}")
         raise e

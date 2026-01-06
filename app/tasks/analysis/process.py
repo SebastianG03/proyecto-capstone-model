@@ -103,12 +103,12 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 4: Estimando velocidad y distancia del último jugador...")
-                last_player = tools.player_records.get_last()
-                if last_player:
+                last_state = tools.player_records.get_last()
+                if last_state:
                     tools.speed_and_distance.process_track(
                         frame_num=frame_num,
-                        track_id=int(f'{last_player.player_id}'),
-                        track=last_player,
+                        track_id=int(f'{last_state.player_id}'),
+                        track=last_state,
                         pixels_to_meters=pixels_to_meters,
                         camera_scale=tools.camera_movement_estimator.get_current_scale(),
                         db=db,
@@ -151,13 +151,13 @@ def process_frame(
                     info_logger.info("[ProcessRun] No hay estado de jugador para asignar equipo.")
                     continue
 
-                last_player = tools.player_records.get_last()
-                if last_player:
+                last_state = tools.player_records.get_last()
+                if last_state:
                     tools.team_assigner.assign_team_colors(frame=frame, players=tools.player_records.get_all_states())
                     tools.team_assigner.get_player_team(
                         frame=frame,
                         frame_num=frame_num,
-                        record=last_player,
+                        record=last_state,
                         db=db)
                 else:
                     info_logger.info("[ProcessRun] No hay último jugador para asignar equipo.")
@@ -166,16 +166,16 @@ def process_frame(
 
             try:
                 info_logger.info("[ProcessRun] Iniciando el reconocimiento del numero del jugador")
-                last_player = tools.player_records.get_last()
+                last_state = tools.player_records.get_last()
                 info_logger.info("[ProcessRun] Ultimo estado del jugador obtenido")
-                if last_player is not None:
-                    player_number = tools.number_recognizer.predict(frame, last_player.get_bbox())
+                if last_state is not None:
+                    player_number = tools.number_recognizer.predict(frame, last_state.get_bbox())
                     info_logger.info(f"[ProcessRun] Numero predecido, resultado: {player_number}")
 
                     if player_number is not None:
                         info_logger.info(f"[ProcessRun] Paso 7: Reconociendo número de jugador: {player_number}")
                         tools.player_records.patch(
-                            int(f'{last_player.id}'),
+                            int(f'{last_state.id}'),
                             {
                                 "shirt_number": player_number
                             }
@@ -190,14 +190,17 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 7: Extrayendo imágenes de jugadores...")
-                last_player = tools.player_records.get_last()
-                if not last_player:
+                last_state = tools.player_records.get_last()
+                last_player = tools.player_records.get_player(int(f'{last_state.player_id}')) if last_state else None
+                if not last_state and not last_player:
                     info_logger.info(f"[ProcessRun] No hay jugador para extraer imágenes, se continúa.")
                     continue
-
+                
+                
                 updated_counts, updated_last, saved_id = extract_player_images(
                     frame=frame,
                     frame_index=frame_num,
+                    player_state=last_state,
                     player=last_player,
                     images_per_player=images_per_player,
                     output_folder=OUTPUT_IMAGES_DIR.as_posix(),
@@ -222,7 +225,7 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 8: Exportando datos del frame...")
-                last_player = tools.player_records.get_last()
+                last_state = tools.player_records.get_last()
                 ball_frame = tools.ball_records.get_last()
                 snapshot = tracemalloc.take_snapshot()
                 total_mem = sum(stat.size for stat in snapshot.statistics("lineno")) / (1024 * 1024)
@@ -233,7 +236,7 @@ def process_frame(
                     "player_image_counts": player_image_counts.copy(),
                     "last_frame_taken": last_frame_taken.copy(),
                     "saved_player_ids": saved_player_ids.copy(),
-                    "player_data": last_player.to_dict() if last_player else None,
+                    "player_data": last_state.to_dict() if last_state else None,
                     "ball_data": ball_frame.to_dict() if ball_frame else None,
                     "memory_usage_mb": total_mem if 'total_mem' in locals() else None,
                 }
