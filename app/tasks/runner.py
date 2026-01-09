@@ -12,14 +12,14 @@ from app.modules.services.verify_model import prepare_model
 from app.modules.trackers import TrackerService
 from sqlalchemy.orm import Session
 
-from app.tasks import upload
+from app.tasks.upload_module import upload
 from app.tasks.analysis.process import process_frame
 from app.tasks.analysis_tools import AnalysisTools
 from app.tasks.upload_heatmaps import upload_heatmaps_for_extracted_players
 from app.utils.routes import INPUT_VIDEOS_DIR, MODELS_DIR, OUTPUT_REPORTS_DIR
 from app.logger import *
 
-def run_analysis(db: Session, video_name: str, match_id: int) -> None:
+def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] | None:
     try:
         export_data_file = OUTPUT_REPORTS_DIR / f"export_data_match_{match_id}.txt"
         export_data_file.parent.mkdir(parents=True, exist_ok=True)
@@ -54,7 +54,7 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     # Descarga video
     downloader = R2Downloader()
     
-    video_name = "fb64992c-0a84-4fb5-8c3c-42f4ddbfda1c-1_720p.mkv"
+    # video_name = "cc6dcc09-b6ed-41ad-8a83-3532ae0e11cc-VID_20260105_211836.mp4"
 
     print(f"Descargando video {video_name}...")
     download_path = Path(INPUT_VIDEOS_DIR, video_name)
@@ -137,7 +137,7 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> None:
     
     generate_diagrams(db)
     info_logger.info("Diagramas generados.")
-    upload_heatmaps_for_extracted_players(db=db, match_id=match_id, extracted_player_ids=set(saved_player_ids))
+    heatmap_files = upload_heatmaps_for_extracted_players(db=db, match_id=match_id, extracted_player_ids=set(saved_player_ids))
     info_logger.info("Heatmaps subidos.")
 
     total_time = time.time() - start_time
@@ -165,3 +165,4 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> None:
         file_type="application/json"
     )
     info_logger.info("Métricas escritas.")
+    return heatmap_files

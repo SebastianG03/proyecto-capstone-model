@@ -12,6 +12,7 @@ dependencies = [
     "fastapi[standard]>=0.122.0",
     "filterpy>=1.4.5",
     "flake8>=7.3.0",
+    "httpx>=0.28.1",
     "isort>=6.0.1",
     "keras>=3.12.0",
     "keras-models>=0.0.7",

@@ -23,6 +23,10 @@ def upload_file(
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
     key = f"{match_id}/{timestamp}_{filename}"
     upload(key, file_bytes)
+    return {
+        "player_id": player_id,
+        "key": key
+    }
 
 @retry(
     stop=stop_after_attempt(3),
@@ -37,7 +41,7 @@ def upload(key: str, file_bytes: bytes, file_type: str = "image/png"):
         )
 
         print("Archivo subido correctamente:", key)
-
+        
     except Exception as e:
         print("Error uploading to R2:", e)
         raise e
