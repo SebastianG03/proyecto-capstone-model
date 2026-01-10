@@ -1,61 +1,84 @@
 import pathlib
 import time
-from typing import Generator, List
+from typing import Generator, List, Tuple, Optional
 
 import cv2
 from cv2.typing import MatLike
 
 from app.entities.models.PlayerModels import Player, PlayerState
 from app.entities.utils.global_values_store import GlobalValuesStore
-from app.logger import debug_logger, info_logger
+from app.logger.logger import debug_logger, info_logger, error_logger
 
-def read_video(video_path: str, batch_size: int = 16) -> Generator[List[tuple[MatLike, float]]]:
-    print(f"Abriendo video para lectura: {video_path}...")
+
+def _open_capture(video_path: str):
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise FileNotFoundError(f"No se pudo abrir el video: {video_path}")
+    return cap
+
+
+def _read_batch(cap, batch_size: int, last_time: float) -> Tuple[List[Tuple[MatLike, float]], float]:
+    batch = []
+    now = time.time()
+    dt = now - last_time
+    for _ in range(batch_size):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        batch.append((frame, dt))
+    return batch, now
+
+
+def read_video(video_path: str, batch_size: int = 16) -> Generator[List[Tuple[MatLike, float]], None, None]:
+    info_logger.info(f"Abriendo video: {video_path}")
+    cap = _open_capture(video_path)
     frame_rate = cap.get(cv2.CAP_PROP_FPS)
     globals = GlobalValuesStore()
-    if frame_rate != globals.fps:
-        info_logger.info(f"[ReadVideo] Frame rate detectado: {frame_rate} FPS. Ajustando a valor global de FPS para consistencia.")
+    if frame_rate and frame_rate != globals.fps:
+        info_logger.info(f"FPS detectado: {frame_rate}, actualizando valor global.")
         globals.update(fps=frame_rate)
 
     try:
-        if not cap.isOpened():
-            raise FileNotFoundError(f"No se pudo abrir el video: {video_path}")
-        
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         last_time = time.time()
         frame_count = 0
 
         while frame_count < total_frames:
-            batch = []
-            now = time.time()
-            dt = now - last_time
-            last_time = now
-
-            for _ in range(batch_size):
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                print("Frame válido obtenido.")
-                frame_count += 1
-                print(f"Leyendo frame {frame_count + 1}...")
-                print(f"Frame leído: {'sí' if ret else 'no'}")
-                batch.append((frame, dt))
-                print(f"Tiempo desde último frame: {dt:.4f} segundos")
-                
-                if frame_count >= total_frames:
-                    break
-            
-            print(f"Tamaño del batch actual: {len(batch)}")
+            batch, last_time = _read_batch(cap, batch_size, last_time)
+            frame_count += len(batch)
             if batch:
+                debug_logger.debug(f"Yielding batch of size {len(batch)}")
                 yield batch
             else:
                 break
+    except FileNotFoundError as e:
+        error_logger.error(str(e))
+        raise RuntimeError("No se pudo abrir el video especificado. Verifica la ruta y los permisos.")
     except Exception as e:
-        print(f"Error leyendo el video {video_path}: {e}")
-        raise e
+        error_logger.exception("Error inesperado al leer el video")
+        raise RuntimeError("Ocurrió un error procesando el video. Revisa los logs para más detalles.")
     finally:
         cap.release()
+
+
+def _validate_and_normalize_bbox(bbox, w, h):
+    x1, y1, x2, y2 = map(int, bbox)
+    x1 = max(0, min(x1, w - 1))
+    x2 = max(0, min(x2, w - 1))
+    y1 = max(0, min(y1, h - 1))
+    y2 = max(0, min(y2, h - 1))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    if (x2 - x1) < 10 or (y2 - y1) < 10:
+        return None
+    return x1, y1, x2, y2
+
+
+def _save_player_crop(folder: pathlib.Path, crop, player_id: int, player_team, player_color, count, frame_index: int):
+    filename = folder / f"player_{player_id}_team_{player_team}_color_{player_color}_img_{count+1}_frame_{frame_index}.png"
+    cv2.imwrite(str(filename), crop)
+    return filename
+
 
 def extract_player_images(
     frame: MatLike,
@@ -63,110 +86,63 @@ def extract_player_images(
     player_state: PlayerState,
     player: Player,
     output_folder: str,
-    player_image_counts: dict, 
-    last_frame_taken: dict,
+    player_image_counts: Optional[dict],
+    last_frame_taken: Optional[dict],
     images_per_player: int = 3,
     frame_skip: int = 5,
 ):
-    """
-    Extrae una imagen de un jugador del frame actual y la guarda en un directorio especificado.
-    
-    Parameters:
-    frame (MatLike): El frame actual del video.
-    frame_index (int): El índice del frame actual en el video.
-    player_state (PlayerState): El estado actual del jugador en el frame.
-    player (Player): El objeto Player del usuario.
-    output_folder (str): La ruta del directorio donde se guardan las imágenes.
-    player_image_counts (dict): Un diccionario que mantiene la cantidad de imágenes extraídas por cada jugador.
-    last_frame_taken (dict): Un diccionario que mantiene el último frame procesado por cada usuario.
-    images_per_player (int): La cantidad de imágenes que se quieren extraer por cada usuario.
-    frame_skip (int): La cantidad de frames que se salta entre cada imagen extraída.
-    
-    Returns:
-    player_image_counts (dict): El diccionario actualizado con la cantidad de imágenes extraídas por cada usuario.
-    last_frame_taken (dict): El diccionario actualizado con el último frame procesado por cada usuario.
-    player_id (int): El ID del usuario que se ha extraído la imagen. Si no se ha extraído nada, devuelve None.
-    """
     try:
-        debug_logger.debug(f"[Extract Player Images] Extrayendo imagen de jugador {player_state.to_dict().get('player_id', None)} en frame {frame_index}...")
+        debug_logger.debug(f"Extrayendo imagen de jugador en frame {frame_index}")
         folder = pathlib.Path(output_folder)
         folder.mkdir(parents=True, exist_ok=True)
 
-        if player_image_counts is None:
-            debug_logger.debug("[Extract Player Images] Inicializando player_image_counts...")
-            player_image_counts = {}
+        player_image_counts = player_image_counts or {}
+        last_frame_taken = last_frame_taken or {}
 
-        if last_frame_taken is None:
-            debug_logger.debug("[Extract Player Images] Inicializando last_frame_taken...")
-            last_frame_taken = {}
-
-        debug_logger.debug(f"[Extract Player Images] Dimensiones del frame: {frame.shape}")
         h, w = frame.shape[:2]
 
-        # Procesar solo records del frame actual
-        debug_logger.debug(f"[Extract Player Images] Procesando jugador: {player_state.to_dict()}")
         state_record = player_state.to_dict()
         player_record = player.to_dict() if player else {}
-        player_id: int = int(state_record.get("player_id", -1))
-        player_team = player_record.get("team", "unknown")
-        player_color = player_record.get("color", "unknown")
-        bbox = player_state.get_bbox()
-        
+        player_id = int(state_record.get("player_id", -1))
         if player_id == -1:
-            debug_logger.debug("[Extract Player Images] Player ID inválido.")
+            debug_logger.debug("Player ID inválido, omitiendo.")
             return player_image_counts, last_frame_taken, None
 
-        if bbox is None or len(bbox) != 4:
-            debug_logger.debug("[Extract Player Images] No hay bounding box para el jugador.")
+        bbox = player_state.get_bbox()
+        if not bbox or len(bbox) != 4:
+            debug_logger.debug("BBox ausente o inválido.")
             return player_image_counts, last_frame_taken, None
 
-        # Máximo por jugador
         count = player_image_counts.get(player_id, 0)
         if count >= images_per_player:
-            debug_logger.debug("[Extract Player Images] Máximo de imágenes alcanzado para el jugador.")
             return player_image_counts, last_frame_taken, None
 
-        # Saltar frames cercanos
         last_f = last_frame_taken.get(player_id, -frame_skip - 1)
         if frame_index - last_f < frame_skip:
-            debug_logger.debug("[Extract Player Images] Saltando frame por frame_skip.")
-            return player_image_counts, last_frame_taken, None
-        
-        h, w = frame.shape[:2]
-
-        # Validar bounding box
-        x1, y1, x2, y2 = map(int, bbox)
-
-        x1 = max(0, min(x1, w - 1))
-        x2 = max(0, min(x2, w - 1))
-        y1 = max(0, min(y1, h - 1))
-        y2 = max(0, min(y2, h - 1))
-
-        if x2 <= x1 or y2 <= y1:
-            debug_logger.debug("[Extract Player Images] Bounding box inválido.")
             return player_image_counts, last_frame_taken, None
 
-        if (x2 - x1) < 10 or (y2 - y1) < 10:
-            debug_logger.debug("[Extract Player Images] Bounding box muy pequeño.")
+        bbox_norm = _validate_and_normalize_bbox(bbox, w, h)
+        if bbox_norm is None:
+            debug_logger.debug("BBox normalizada inválida.")
             return player_image_counts, last_frame_taken, None
-        
+
+        x1, y1, x2, y2 = bbox_norm
         torso_y2 = y1 + int((y2 - y1) * 0.6)
         crop = frame[y1:torso_y2, x1:x2]
-        
         if crop.size == 0:
-            debug_logger.debug("[Extract Player Images] Crop resultó en una imagen vacía.")
+            debug_logger.debug("Crop vacío, omitiendo.")
             return player_image_counts, last_frame_taken, None
 
-        # Guardar imagen
-        filename = folder / f"player_{player_id}_team_{player_team}_color_{player_color}_img_{count+1}_frame_{frame_index}.png"
-        debug_logger.debug(f"[Extract Player Images] Guardando imagen en {filename}...")
-        cv2.imwrite(str(filename), crop)
-        player_image_counts.update({player_id: count + 1})
-        last_frame_taken.update({player_id: frame_index})
+        player_team = player_record.get("team", "unknown")
+        player_color = player_record.get("color", "unknown")
+        filename = _save_player_crop(folder, crop, player_id, player_team, player_color, count, frame_index)
 
-        debug_logger.debug("[Extract Player Images] Imagen guardada.")
+        player_image_counts[player_id] = count + 1
+        last_frame_taken[player_id] = frame_index
 
+        debug_logger.debug(f"Imagen guardada: {filename}")
         return player_image_counts, last_frame_taken, player_id
-    except Exception as e:
-        print(f"Error extrayendo imagen de jugador { player_state.to_dict().get('player_id', None) } en frame {frame_index}: {e}")
-        raise e
+    except Exception:
+        error_logger.exception("Error al extraer la imagen del jugador")
+        raise RuntimeError("No se pudo extraer la imagen del jugador. Por favor revisa el video y los parámetros de entrada.")
+
