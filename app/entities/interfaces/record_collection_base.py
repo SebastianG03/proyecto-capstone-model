@@ -24,8 +24,8 @@ class RecordCollectionBase(metaclass=Singleton):
         """
         return obj.track_id
     
-    def get_last(self, db):
-        return db.query(self.orm_model).order_by(self.orm_model.id.desc()).first()
+    def get_last(self):
+        return self.db.query(self.orm_model).order_by(self.orm_model.id.desc()).first()
 
     #TODO Update to specific collection use
     def get_record_for_frame(self, track_id: int, frame_index: int):
@@ -57,16 +57,16 @@ class RecordCollectionBase(metaclass=Singleton):
 
     def post(self, obj_data: dict):
         try:
-            print(f"Creando nuevo registro con datos: {obj_data}")
+            print(f"[RecordCollectionBase] Creando nuevo registro con datos: {obj_data}")
             obj = self.orm_model(**obj_data)
             self.db.add(obj)
-            print(f"Objeto añadido a la sesión de la DB: {obj}")
+            print(f"[RecordCollectionBase] Objeto añadido a la sesión de la DB: {obj}")
             self.db.commit()
             self.db.refresh(obj)
-            print(f"Objeto refrescado: {obj}")
+            print(f"[RecordCollectionBase] Objeto refrescado: {obj}")
             return obj
         except Exception as e:
-            print(f"Error al crear registro: {e}")
+            print(f"[RecordCollectionBase] Error al crear registro: {e}")
             self.db.rollback()
             return None
         finally:

@@ -5,7 +5,7 @@ from filterpy.kalman import KalmanFilter
 
 import numpy as np
 import supervision as sv
-from ultralytics import YOLO
+from ultralytics.models import YOLO
 
 from app.entities.collections.track_collections import TrackCollectionBall
 from app.entities.interfaces.tracker_base import Tracker
@@ -151,7 +151,7 @@ class BallTracker(Tracker):
             else:
                 S_inv = np.linalg.inv(S)
             
-            d2 = float(y.T @ S_inv @ y)
+            d2 = float((y.T @ S_inv @ y).item())
             if d2 < self.gate:
                 self.kf.update(z)
                 self.age = 0

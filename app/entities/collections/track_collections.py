@@ -1,36 +1,6 @@
-from typing import List, override
+from typing import override
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
-from app.entities.models import PlayerStateModel, HeatmapPointModel, BallEventModel
-
-class TrackCollectionPlayer(RecordCollectionBase):
-    orm_model = PlayerStateModel
-
-    @override
-    def generate_id(self, obj):
-        return obj.track_id
-
-    @override
-    def get_last(self, db) -> PlayerStateModel:
-        return db.query(PlayerStateModel).order_by(PlayerStateModel.id.desc()).first()
-
-    @override
-    def get_record_for_frame(self, track_id: int, frame_index: int):
-        """
-        Busca un registro por track_id y frame_index.
-        Puede ser sobrescrito si la colección usa otros campos.
-        """
-        try:
-            item = (self.db.query(PlayerStateModel)
-                     .filter(PlayerStateModel.player_id == track_id)
-                     .filter(PlayerStateModel.frame_index == frame_index)).first()
-            return item
-        except Exception as e:
-            print(f"Error al obtener registro para frame: {e}")
-
-    @override
-    def get_all(self):
-        return self.db.query(PlayerStateModel).order_by(PlayerStateModel.frame_index.asc()).all()
-
+from app.entities.models import HeatmapPointModel, BallEventModel
 
 class TrackCollectionBall(RecordCollectionBase):
     orm_model = BallEventModel
@@ -39,11 +9,11 @@ class TrackCollectionBall(RecordCollectionBase):
     def generate_id(self, obj):
         return obj.frame_index
     @override
-    def get_last(self, db) -> BallEventModel:
-        return db.query(BallEventModel).order_by(BallEventModel.id.desc()).first()
+    def get_last(self) -> BallEventModel | None:
+        return self.db.query(BallEventModel).order_by(BallEventModel.id.desc()).first()
 
     @override
-    def get_record_for_frame(self, track_id: int, frame_index: int):
+    def get_record_for_frame(self, track_id: int, frame_index: int) -> BallEventModel | None:
         """
         Busca un registro por track_id y frame_index.
         Puede ser sobrescrito si la colección usa otros campos.
@@ -57,7 +27,7 @@ class TrackCollectionBall(RecordCollectionBase):
             print(f"Error al obtener registro para frame: {e}")
 
     @override
-    def get_all(self):
+    def get_all(self) -> list[BallEventModel]:
         return self.db.query(BallEventModel).order_by(BallEventModel.frame_index.asc()).all()
 
 class TrackCollectionHeatmapPoint(RecordCollectionBase):
@@ -68,7 +38,7 @@ class TrackCollectionHeatmapPoint(RecordCollectionBase):
         return obj.point_id
     
     @override
-    def get_record_for_frame(self, track_id: int, frame_index: int):
+    def get_record_for_frame(self, track_id: int, frame_index: int) -> HeatmapPointModel | None:
         return (
             self.db.query(HeatmapPointModel)
             .filter(
