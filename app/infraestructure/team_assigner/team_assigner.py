@@ -170,15 +170,47 @@ class TeamAssigner(metaclass=Singleton):
     # ---------------------------
     # Predicción rápida por color
     # ---------------------------
-    def _predict_from_color(self, color_bgr: np.ndarray) -> Optional[int]:
-        if self.kmeans is None:
+    def _lab_distance(self, lab1: np.ndarray, lab2: np.ndarray, wL: float = 0.2) -> float:
+        dl = float(lab1[0] - lab2[0])
+        da = float(lab1[1] - lab2[1])
+        db = float(lab1[2] - lab2[2])
+        return (wL * (dl ** 2) + da ** 2 + db ** 2) ** 0.5
+
+    def _to_lab(self, bgr: np.ndarray) -> np.ndarray:
+        # Convert BGR 0-255 (shape (3,) or (1,1,3)) to Lab float32
+        arr = np.asarray(bgr, dtype=np.uint8).reshape(1, 1, 3)
+        lab = cv2.cvtColor(arr, cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
+        return lab
+
+    def _closest_team_from_color(self, color_bgr: np.ndarray) -> Optional[int]:
+        if not self.team_colors:
             return None
+        try:
+            lab_c = self._to_lab(color_bgr)
+            best = None
+            best_d = float('inf')
+            for team, col in self.team_colors.items():
+                lab_t = self._to_lab(np.array(col, dtype=np.uint8))
+                d = self._lab_distance(lab_c, lab_t)
+                if d < best_d:
+                    best_d = d
+                    best = team
+            return best
+        except Exception as e:
+            error_logger.error(f"[Team Assigner] Closest color error: {e}")
+            return None
+
+    def _predict_from_color(self, color_bgr: np.ndarray) -> Optional[int]:
+        # Prefer KMeans prediction; on failure fallback to Lab-distance nearest
+        if self.kmeans is None:
+            return self._closest_team_from_color(color_bgr)
         try:
             label = int(self.kmeans.predict(color_bgr.reshape(1, -1))[0])
             return label + 1
         except Exception as e:
-            error_logger.error(f"[Team Assigner] KMeans predict error: {e}")
-            return None
+            error_logger.error(f"[Team Assigner] KMeans predict error: {e}, falling back to Lab distance")
+            return self._closest_team_from_color(color_bgr)
+
 
     # ---------------------------
     # API principal (manteniendo nombre de la clase)
