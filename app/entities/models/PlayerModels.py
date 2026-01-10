@@ -4,7 +4,7 @@ from sqlalchemy import (Boolean, Column, Integer, Float,
 from sqlalchemy.dialects.sqlite import DATETIME
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.modules.services.database import Base
+from app.infraestructure.services.database import Base
 import json
 
 class Player(Base):

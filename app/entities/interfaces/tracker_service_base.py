@@ -14,11 +14,11 @@ from app.entities.interfaces.tracker_base import Tracker
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
 from app.entities.utils.singleton import AbstractSingleton
-from app.modules.services.bbox_processor_service import get_center_of_bbox
+from app.infraestructure.services.bbox_processor_service import get_center_of_bbox
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
-    from app.modules.trackers.tracker_factory import TrackerFactory
+    from app.infraestructure.trackers.tracker_factory import TrackerFactory
 
 
 class TrackerServiceBase(metaclass=AbstractSingleton):
@@ -30,7 +30,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
     """
 
     def __init__(self, model_path: str, use_half_precision: bool = False):
-        from app.modules.trackers.tracker_factory import TrackerFactory
+        from app.infraestructure.trackers.tracker_factory import TrackerFactory
         self.model = self.__load_detector__(model_path, use_half_precision)
         self.tracker = sv.ByteTrack(
             frame_rate=30,
