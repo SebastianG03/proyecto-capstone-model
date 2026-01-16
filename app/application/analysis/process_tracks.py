@@ -2,18 +2,17 @@ from cv2.typing import MatLike
 from sqlalchemy.orm import Session
 
 from app.infraestructure.trackers.tracker_service import TrackerService
-from app.shared.analysis_tools import AnalysisTools
-
+from app.entities.utils.tools_context import analysis_context
 
 def process_tracks_and_position(
     frame: MatLike,
     frame_num: int,
     db: Session,
     tracker: TrackerService,
-    tools: AnalysisTools,
     camera_movement: tuple[float, float],
     pixels_to_meters: float,
 ):
+    tools = analysis_context.tools
     print("Procesando tracks y posiciones...")
     try:
         for collection in (tools.player_records, tools.ball_records):

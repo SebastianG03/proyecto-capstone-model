@@ -1,88 +1,90 @@
 from collections import defaultdict
 from typing import List, Dict, Optional
+from app.core.config import PUBLIC_URL
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
-import random
+from datetime import datetime
+from decouple import config
 
-BASE_URL = "https://pub-b1446258d30c4547a877d83f55960843.r2.dev"
-
-unique_shirt_numbers = set(
-    range(1, 100)
-)
 
 def analyze_match(
     player_states: List[PlayerState],
     ball_events: List[BallEventModel],
+    start_time: datetime,
     players: List[Player],
     heatmaps: Optional[Dict[int, str]] = None,
-    match_id: int = 0
+    match_id: int = 0,
 ) -> List[Dict]:
     """
-    Analiza los datos de un partido y devuelve estadísticas por jugador en formato compatible con el serializer.
+    Analiza los datos de un partido y devuelve estadísticas por jugador.
     """
-    stats = defaultdict(lambda: {
-        "player_id": 0,
-        "match_id": match_id,
-        "shirt_number": None,
-        "team": None,
-        "team_color": None,
-        "passes": 0,
-        "avg_possession_time_s": 0.0,
-        "avg_speed_kmh": 0.0,
-        "distance_km": 0.0,
-        "km_run": None,
-        "shots_on_target": 0,
-        "has_goal": False,
-        "heatmap_image_path": ""
-    })
+    # Agrupar estados por jugador
+    states_by_player = defaultdict(list)
+    for state in player_states:
+        states_by_player[state.player_id].append(state)
 
+    # Ordenar por frame_index
+    for pid in states_by_player:
+        states_by_player[pid].sort(key=lambda s: s.frame_index)
+
+    # Info de jugadores
     player_info = {p.player_id: p.to_dict() for p in players}
 
-    for record in player_states:
-        item = record.to_dict()
-        pid = record.player_id
+    # Inicializar estadísticas
+    stats = {}
+    for pid in states_by_player:
         if pid not in player_info:
             continue
 
-        s = stats[pid]
-        s["player_id"] = int(f'{pid}')
-        s["match_id"] = match_id
-        
-        s["shirt_number"] = player_info[pid]["shirt_number"]
-        s["team"] = str(player_info[pid]["team"])
-        s["team_color"] = str(player_info[pid]["color"])
+        states = states_by_player[pid]
+        total_distance_m = sum(s.distance for s in states if s.distance is not None)
+        total_distance_km = total_distance_m / 1000.0
 
-        # Acumulados
-        s["avg_possession_time_s"] += float(item.get("ball_possession_time", 0.0))
-        s["distance_km"] += float(item.get("incremental_distance", 0.0)) / 1000.0  # m -> km
-        s["avg_speed_kmh"] += float(item.get("speed", 0.0))
+        # Tiempo total en segundos
+        timestamps = [s.timestamp_ms for s in states if s.timestamp_ms is not None]
+        if len(timestamps) >= 2:
+            time_s = (max(timestamps) - min(timestamps)) / 1000.0
+        else:
+            time_s = 1.0  # fallback para evitar división por cero
 
-    # Promedios
-    total_frames = len(player_states)
-    for pid in stats:
-        if total_frames > 0:
-            stats[pid]["avg_speed_kmh"] /= total_frames
+        # Velocidad promedio
+        avg_speed_kmh = (total_distance_km / (time_s / 3600.0)) if time_s > 0 else 0.0
 
-    # Pases y tiros
+        # Tiempo de posesión
+        total_possession_time = sum(s.ball_possession_time or 0.0 for s in states)
+
+        stats[pid] = {
+            "player_id": int(pid),
+            "match_id": match_id,
+            "shirt_number": player_info[pid]["shirt_number"],
+            "team": str(player_info[pid]["team"]),
+            "team_color": str(player_info[pid]["color"]),
+            "passes": 0,
+            "avg_possession_time_s": total_possession_time,
+            "avg_speed_kmh": avg_speed_kmh,
+            "distance_km": total_distance_km,
+            "km_run": total_distance_km,
+            "shots_on_target": 0,
+            "has_goal": False,
+            "heatmap_image_path": "",
+            "started_at": start_time.isoformat()
+        }
+
+    # Contar pases y tiros (lógica original)
     prev_owner = None
     for event in ball_events:
         item = event.to_dict()
-        current_owner = item.get("ball_owner_id")
+        current_owner = item.get("owner_id")
         if prev_owner and current_owner and prev_owner != current_owner:
-            stats[prev_owner]["passes"] += 1
-            stats[prev_owner]["shots_on_target"] += 1
+            if prev_owner in stats:
+                stats[prev_owner]["passes"] += 1
+                stats[prev_owner]["shots_on_target"] += 1  # ¿Lógica correcta?
         prev_owner = current_owner
 
-    # Agregar heatmap si existe
+    # Agregar heatmaps
     if heatmaps:
         for pid, key in heatmaps.items():
             if pid in stats:
-                stats[pid]["heatmap_image_path"] = f"{BASE_URL}/{key}"
+                stats[pid]["heatmap_image_path"] = f"{PUBLIC_URL}/{key}"
 
-    # Convertir a lista y aplicar formato final
-    result = []
-    for pid, data in stats.items():
-        data["km_run"] = data["distance_km"]  # alias legacy
-        result.append(data)
-
-    return result
+    return list(stats.values())

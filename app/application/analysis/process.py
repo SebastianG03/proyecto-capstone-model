@@ -1,8 +1,9 @@
+from collections import defaultdict
 import json
 from pathlib import Path
 import time
 import tracemalloc
-from typing import List
+from typing import List, Optional
 from cv2.typing import MatLike
 import numpy as np
 from sqlalchemy.orm import Session
@@ -14,7 +15,7 @@ from app.infraestructure.trackers.tracker_service import TrackerService
 from app.application.analysis.assign_ball import assign_ball_to_player
 from app.application.analysis.process_tracks import process_tracks_and_position
 from app.infraestructure.services.bbox_processor_service import calculate_area_boundary_ends
-from app.shared.analysis_tools import AnalysisTools
+from app.entities.utils import analysis_context
 from app.utils.routes import OUTPUT_IMAGES_DIR
 from app.logger import *
 
@@ -23,7 +24,6 @@ def process_frame(
     video_batch: List[tuple[MatLike, float]],
     db: Session,
     tracker: TrackerService,
-    tools: AnalysisTools,
     metrics: dict,
     images_per_player: int, 
     saved_player_ids: List[int],
@@ -37,7 +37,10 @@ def process_frame(
     last_frame_taken: dict = {}
     start_time = time.time()
     globals = GlobalValuesStore()
+    tools = analysis_context.tools
+    numbers_data = defaultdict(lambda: defaultdict(float))
     info_logger.info(f"[ProcessRun] Iniciando procesamiento de lote de frames en timestamp {start_time}")
+    errors = 0
     try:
         for frame, _ in video_batch:
             actual_time = time.time()
@@ -62,6 +65,9 @@ def process_frame(
                 camera_movement = tools.camera_movement_estimator.update(frame)
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error estimando movimiento de cámara: {e}")
+                error = update_error(errors)
+                if error == -1: break
+                errors = error
                 continue
 
             # -------------------------------------------------------
@@ -70,7 +76,6 @@ def process_frame(
             try:
                 info_logger.info("[ProcessRun] Paso 2: Procesando frame en el tracker...")
                 process_tracks_and_position(
-                    tools=tools,
                     frame=frame,
                     frame_num=frame_num,
                     db=db,
@@ -80,23 +85,11 @@ def process_frame(
                 )
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error en process_tracks_and_position: {e}")
+                error = update_error(errors)
+                if error == -1: break
+                errors = error
                 continue
 
-            # -------------------------------------------------------
-            # 3. MÉTRICAS DE DETECCIÓN DEL BALÓN
-            # -------------------------------------------------------
-            try:
-                info_logger.info("[ProcessRun] Paso 3: Calculando métricas de detección del balón...")
-                ball_frames = tools.ball_records.get_all()
-                detected = sum(1 for t in ball_frames if t.get_bbox() is not None)
-                total = len(ball_frames)
-                metrics["ball_detection"] = {
-                    "detected": detected,
-                    "interpolated": total - detected,
-                }
-            except Exception as e:
-                error_logger.error(f"[Frame {frame_num}] Error calculando métricas de balón: {e}")
-                metrics["ball_detection"] = {"detected": 0, "interpolated": 0}
 
             # -------------------------------------------------------
             # 4. ESTIMAR VELOCIDAD / DISTANCIA
@@ -118,6 +111,10 @@ def process_frame(
                     info_logger.info("[ProcessRun] No hay último jugador para estimar velocidad/distancia.")
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error estimando velocidad/distancia: {e}")
+                error = update_error(errors)
+                if error == -1: break
+                errors = error
+                continue
 
             # -------------------------------------------------------
             # 5. ASIGNACIÓN DEL BALÓN A JUGADOR
@@ -139,6 +136,10 @@ def process_frame(
                     info_logger.info("[ProcessRun] No hay frames de balón para asignar.")
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error asignando balón: {e}")
+                error = update_error(errors)
+                if error == -1: break
+                errors = error
+                continue
 
             # -------------------------------------------------------
             # 6. ASIGNAR EQUIPO
@@ -163,27 +164,41 @@ def process_frame(
                     info_logger.info("[ProcessRun] No hay último jugador para asignar equipo.")
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error asignando equipo: {e}")
+                error = update_error(errors)
+                if error == -1: break
+                errors = error
+                continue
 
             try:
-                info_logger.info("[ProcessRun] Iniciando el reconocimiento del numero del jugador")
                 last_state = tools.player_records.get_last()
-                info_logger.info("[ProcessRun] Ultimo estado del jugador obtenido")
-                if last_state is not None:
-                    player_number = tools.number_recognizer.predict(frame, last_state.get_bbox())
-                    info_logger.info(f"[ProcessRun] Numero predecido, resultado: {player_number}")
+                if last_state is not None and last_state.get_bbox() is not None:
+                    player_id = int(f'{last_state.player_id}')
+                    crop = tools.number_recognizer._crop_dorsal_region(frame, last_state.get_bbox())
+                    if crop.size == 0:
+                        info_logger.info("[ProcessRun] Crop del dorsal vacío, omitiendo reconocimiento.")
+                    else:
+                        proc = tools.number_recognizer._preprocess(crop)
 
-                    if player_number is not None:
-                        info_logger.info(f"[ProcessRun] Paso 7: Reconociendo número de jugador: {player_number}")
-                        tools.player_records.patch(
-                            int(f'{last_state.id}'),
-                            {
-                                "shirt_number": player_number
-                            }
-                        )
-                else:
-                    info_logger.info("[ProcessRun] No hay último jugador para reconocer número.")
+                        def update_best_num(num: Optional[int], conf: float):
+                            if num is not None and conf > 0.25:
+                                numbers_data[player_id][num] += conf
+
+                        must_flush = tools.trocr_buffer.push(proc, update_best_num)
+                        if must_flush:
+                            tools.number_recognizer.flush_buffer(tools.trocr_buffer)
+
+                    # decisión inmediata (con lo que haya hasta ahora)
+                    best_num = max(numbers_data[player_id], key=numbers_data[player_id].get, default=None) # type: ignore
+                    player = tools.player_records.get_player(player_id)
+                    if best_num is not None and player is not None:
+                        id = int(f'{player.id}')
+                        tools.player_records.patch(id, {"shirt_number": best_num})
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error reconociendo número de jugador: {e}")
+                error = update_error(errors)
+                if error == -1: break
+                errors = error
+                continue
 
             # -------------------------------------------------------
             # 7. EXTRAER IMÁGENES
@@ -219,7 +234,9 @@ def process_frame(
                     last_frame_taken.clear()
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error extrayendo imágenes: {e}")
-
+                error = update_error(errors)
+                if error == -1: break
+                errors = error
             # -------------------------------------------------------
             # 8. EXPORTAR DATOS DEL FRAME
             # -------------------------------------------------------
@@ -243,6 +260,9 @@ def process_frame(
                 export_data_file.write_text(json.dumps(export_data, ensure_ascii=False) + "\n", encoding="utf-8")
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error escribiendo exportación: {e}")
+                error = update_error(errors)
+                if error == -1: break
+                errors = error
 
             print(f"[Frame {frame_num}] procesado correctamente.")
 
@@ -257,178 +277,7 @@ def process_frame(
         for hdlr in info_logger.handlers[:]:
             hdlr.flush()
 
-# import json
-# from pathlib import Path
-# import tracemalloc
-# from typing import List
-# from cv2.typing import MatLike
-# from sqlalchemy.orm import Session
-
-# from app.entities.models.PlayerState import PlayerStateModel
-# from app.modules.services.video_processing_service import extract_player_images
-# from app.modules.trackers.tracker_service import TrackerService
-# from app.tasks.analysis.assign_ball import assign_ball_to_player
-# from app.tasks.analysis.process_tracks import process_tracks_and_position
-# from app.tasks.analysis_tools import AnalysisTools
-# from app.utils.routes import OUTPUT_IMAGES_DIR
-# from app.logger import *
-
-# def process_frame(
-#     frame_num: int,
-#     video_batch: List[tuple[MatLike, float]],
-#     db: Session,
-#     tracker: TrackerService,
-#     tools: AnalysisTools,
-#     metrics: dict,
-#     images_per_player: int,
-#     saved_player_ids: List[int],
-#     export_data_file: Path
-# ): 
-#     player_image_counts: dict = {}
-#     last_frame_taken: dict = {}
-#     try:
-#         for frame, dt in video_batch:
-#             frame_num += 1
-#             print(f"\n{'='*20} Procesando frame {frame_num} {'='*20}\n")
-#             print(f"Tiempo desde último frame: {dt:.4f} segundos")
-#             # -------------------------------------------------------
-#             # 1. Estimar movimiento de cámara
-#             # -------------------------------------------------------
-#             print("Estimando movimiento de cámara...")
-#             camera_movement = tools.camera_movement_estimator.update(frame)
-
-#             # -------------------------------------------------------
-#             # 2. TRACKING DE OBJETOS (jugadores + balón)
-#             # -------------------------------------------------------
-#             print("Procesando frame en el tracker...")
-#             process_tracks_and_position(
-#                 tools=tools,
-#                 frame=frame,
-#                 frame_num=frame_num,
-#                 db=db,
-#                 tracker=tracker,
-#                 camera_movement=camera_movement,
-#             )
-
-
-#             # -------------------------------------------------------
-#             # 4. MÉTRICAS DE DETECCIÓN DEL BALÓN
-#             # -------------------------------------------------------
-#             debug_logger.debug("Obteniendo métricas de detección del balón...")
-#             ball_frames = tools.ball_records.get_all()
-#             debug_logger.debug(f"Total frames con balón: {len(ball_frames)}")
-#             if len(ball_frames) == 1:                
-#                 metrics["ball_detection"] = {
-#                     "detected": 1,
-#                     "interpolated": 0,
-#                 }
-#             elif len(ball_frames) > 1:
-#                 detected = sum(1 for t in ball_frames if t.get_bbox() is not None)
-#                 print(f"Frames con balón detectado: {detected}")
-#                 total = len(ball_frames)
-#                 print(f"Total frames: {total}")
-
-#                 metrics["ball_detection"] = {
-#                     "detected": detected,
-#                     "interpolated": total - detected,
-#                 }
-
-
-#             debug_logger.debug("Estimando velocidad y distancia del último jugador...")
-#             last_player = tools.player_records.get_last(db)
-#             debug_logger.debug("Ultimo jugador para obtener la velocidad y distancia: ", last_player is not None)
-#             try:
-#                 if last_player:
-#                     debug_logger.debug(f"Último jugador para distancia: {last_player.player_id}")
-#                     tools.speed_and_distance.process_track(
-#                         frame_num=frame_num,
-#                         track_id=int(f'{last_player.player_id}'),
-#                         track=last_player,
-#                         db=db,
-#                     )
-#                     debug_logger.debug("Velocidad y distancia estimadas.")
-#                 else:
-#                     debug_logger.debug("No hay último jugador para estimar velocidad/distancia.")
-#             except Exception as e:
-#                 error_logger.error(f"Error estimando velocidad/distancia para el jugador {last_player.player_id}: {e}")
-#                 pass
-
-#             # -------------------------------------------------------
-#             # 6. ASIGNACIÓN DEL BALÓN A UN JUGADOR
-#             # -------------------------------------------------------
-#             players = tools.player_records.get_all()
-#             if ball_frames is not None or len(ball_frames) > 0:
-#                 assign_ball_to_player(
-#                     ball_records=ball_frames,
-#                     players=players,
-#                     tools=tools,
-#                     db=db,
-#                     frame_index=frame_num,
-#                     dt=dt
-#                 )
-            
-#             print("Asignacion de equipo")
-#             last_player = tools.player_records.get_last(db)
-#             team = tools.team_assigner.get_player_team(frame, last_player, db)
-#             print("Equipo asignado. Equipo: ", team)
-            
-#             print("Extrayendo imagenes de jugadores.")
-
-#             last_player = tools.player_records.get_last(db)
-#             print("Último jugador obtenido: ", last_player is not None)
-#             if not last_player:
-#                 print("No hay jugador para extraer imagenes, saltandom frame...")
-#                 continue
-#             updated_player_image_counts, updated_last_frame_taken, saved_player_id = extract_player_images(
-#             frame=frame,
-#             frame_index=frame_num,
-#             player=last_player,
-#             images_per_player=images_per_player,
-#             output_folder=OUTPUT_IMAGES_DIR.as_posix(),
-#             player_image_counts=player_image_counts,
-#             last_frame_taken=last_frame_taken,
-#             )
-#             player_image_counts.update(updated_player_image_counts)
-#             last_frame_taken.update(updated_last_frame_taken)
-#             if saved_player_id is not None:
-#                 saved_player_ids.append(saved_player_id)
-#             print("Imágenes extraídas.")
-            
-#             if all(count >= images_per_player for count in player_image_counts.values()):
-#                 last_frame_taken.clear() 
-            
-#             print(f"Frame procesado. {frame_num}")
-
-#             print("Datos de exportación del frame:")
-#             export_data = {
-#                 "frame_num": frame_num,
-#                 "frame_time": f'{dt:.4f} seconds',
-#                 "metrics": metrics,
-#                 "player_image_counts": player_image_counts,
-#                 "last_frame_taken": last_frame_taken,
-#                 "saved_player_ids": saved_player_ids,
-#                 "player_data": last_player.to_dict() if last_player else None,
-#                 "ball_data": ball_frames[-1].to_dict() if ball_frames else None
-#             }
-#             print(export_data)
-#             info_logger.info(f"Frame {frame_num} data: {export_data}")
-            
-#             print("Escribiendo datos de exportación al archivo...")
-#             chars = export_data_file.open("a", encoding="utf-8").write(json.dumps(export_data) + "\n")
-#             print("Datos escritos al archivo. Escrito: ", chars, " caracteres.")
-
-#             snapshot = tracemalloc.take_snapshot()
-#             total_mem = sum(stat.size for stat in snapshot.statistics("lineno")) / (1024 * 1024)
-
-#             if not metrics["memory_usage"]:
-#                 metrics["memory_usage"].append(total_mem)
-#         return frame_num, saved_player_ids, metrics
-#     except Exception as e:
-#         print(f"Error procesando frame {frame_num}: {e}")
-#         raise e
-#     finally:
-#         for hdlr in info_logger.handlers[:]:
-#             hdlr.flush()
-#             hdlr.close()
-#             info_logger.removeHandler(hdlr)
-            
+def update_error(error: int):
+    if error > 10:
+        return -1
+    return error + 1

@@ -22,8 +22,7 @@ async def analyze_video(
     try:
         background_tasks.add_task(
             process_video_async,
-            payload.video_name,
-            payload.match_id,
+            **payload.model_dump(),
         )
 
         return {

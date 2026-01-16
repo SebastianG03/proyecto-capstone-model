@@ -14,8 +14,8 @@ class TrackerService(TrackerServiceBase):
     - Mantiene self.last_tracked para acceso externo (p.ej. TeamAssigner)
     """
 
-    def __init__(self, model_path: str, use_half_precision: bool = False):
-        super().__init__(model_path=model_path, use_half_precision=use_half_precision)
+    def __init__(self, model_path: str):
+        super().__init__(model_path=model_path)
         self.last_tracked: sv.Detections | None = None
 
 

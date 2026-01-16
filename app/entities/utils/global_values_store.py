@@ -80,3 +80,5 @@ class GlobalValuesStore(metaclass=Singleton):
     # --- Representación legible ---
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(timestamp={self._timestamp}, fps={self._fps})"
+
+globals = GlobalValuesStore()

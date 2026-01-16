@@ -1,5 +1,3 @@
-# tracker_service_base.py
-from asyncio.log import logger
 import logging
 from typing import List, Union, TYPE_CHECKING
 
@@ -9,7 +7,7 @@ import torch
 from ultralytics.models import YOLO
 
 
-from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer
+from app.core.config import MODEL_USE_HALF_PRECISION
 from app.entities.interfaces.tracker_base import Tracker
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
@@ -18,7 +16,7 @@ from app.infraestructure.services.bbox_processor_service import get_center_of_bb
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
-    from app.infraestructure.trackers.tracker_factory import TrackerFactory
+    from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer
 
 
 class TrackerServiceBase(metaclass=AbstractSingleton):
@@ -29,9 +27,10 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
     - Provee métodos streaming: process_frame (1 frame) y get_object_tracks (compatibilidad con listas)
     """
 
-    def __init__(self, model_path: str, use_half_precision: bool = False):
+    def __init__(self, model_path: str):
         from app.infraestructure.trackers.tracker_factory import TrackerFactory
-        self.model = self.__load_detector__(model_path, use_half_precision)
+        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.model = self.__load_detector__(model_path)
         self.tracker = sv.ByteTrack(
             frame_rate=30,
             lost_track_buffer=60,
@@ -41,18 +40,16 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         )
         self.tracker_factory = TrackerFactory(self.model)
         self.tracker_path = "bytetrack.yaml"
-        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
         logging.info(f"TrackerServiceBase initialized on device={self._device}")
 
-    def __load_detector__(self, model_path: str, use_half_precision: bool = False) -> YOLO:
+    def __load_detector__(self, model_path: str) -> YOLO:
         model = YOLO(model=model_path, task='obb', verbose=False)
-        if torch.cuda.is_available():
-            model.to('cuda')
-            if use_half_precision:
-                try:
-                    model.half()
-                except Exception as e:
-                    logging.warning(f"Could not enable half precision: {e}")
+        # model.to(self._device)
+        if MODEL_USE_HALF_PRECISION:
+            try:
+                model.half()
+            except Exception as e:
+                logging.warning(f"Could not enable half precision: {e}")
         return model
 
     def __del__(self):

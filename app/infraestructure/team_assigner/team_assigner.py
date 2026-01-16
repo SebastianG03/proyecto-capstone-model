@@ -3,7 +3,6 @@ import logging
 from collections import deque, defaultdict
 from typing import Dict, List, Optional, Tuple
 from cv2.typing import MatLike
-from scipy import stats
 from sqlalchemy.orm import Session
 
 import cv2

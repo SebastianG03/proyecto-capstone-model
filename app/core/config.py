@@ -1,14 +1,28 @@
 import os
-from pathlib import Path
+from decouple import config
+#S3
+S3_API=                         str(config('S3_API'))
+VIDEOS_S3_ENDPOINT=             str(config('VIDEOS_S3_ENDPOINT'))
+BUCKET=                         str(config('BUCKET'))
+VIDEO_BUCKET=                   str(config('VIDEO_BUCKET'))
 
-ENV = os.environ.get('ENV', 'development')
-DEBUG = os.environ.get('DEBUG', 'true').lower() in ('1','true','yes')
-LOG_LEVEL = os.environ.get('LOG_LEVEL', 'debug' if DEBUG else 'error')
-MODEL_PROFILE = os.environ.get('MODEL_PROFILE', 'light' if DEBUG else 'optimized')
-PLAYER_IMG_DIR = os.environ.get('PLAYER_IMG_DIR', str(Path('app/res/player_images')))
-# other default paths
-BASE_DIR = Path(__file__).resolve().parents[1]
-MODELS_DIR = Path(os.environ.get('MODELS_DIR', BASE_DIR / 'app' / 'res' / 'models'))
+#API
+STATS_NOTIFY_URL=               str(config('STATS_NOTIFY_URL'))
 
-def is_production():
-    return ENV == 'production'
+#R2
+R2_ACCESS_TOKEN=                str(config('R2_ACCESS_TOKEN'))
+R2_ACCESS_KEY_ID=               str(config('R2_ACCESS_KEY_ID'))
+R2_SECRET_ACCESS_KEY=           str(config('R2_SECRET_ACCESS_KEY'))
+R2_ACCOUNT_ID=                  str(config('R2_ACCOUNT_ID'))
+PUBLIC_URL=                     str(config('PUBLIC_URL'))
+#SETTINGS
+DEBUG=                          config('DEBUG', default=False, cast=bool)
+MAX_EMPTY_BATCHES =             config('MAX_EMPTY_BATCHES', default=5, cast=int)
+MAX_PROCESSING_TIME =           config('MAX_PROCESSING_TIME', default=-1, cast=int)
+MODEL_NAME=                     str(config('MODEL_NAME'))
+DOWNLOAD_MODEL_URL=             str(config('DOWNLOAD_MODEL_URL'))
+USE_PARALLEL_IO=                config('USE_PARALLEL_IO', default=True, cast=bool)
+MODEL_USE_HALF_PRECISION=       config('MODEL_USE_HALF_PRECISION', default=False, cast=bool)
+
+os.environ["USE_CUDA"] = "0"
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'

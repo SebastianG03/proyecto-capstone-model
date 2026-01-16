@@ -4,6 +4,7 @@ import time
 import tracemalloc
 from typing import List
 
+from app.core.config import MAX_EMPTY_BATCHES, MAX_PROCESSING_TIME
 from app.infraestructure.plotting import generate_diagrams
 
 from app.infraestructure.trackers import TrackerService
@@ -15,18 +16,17 @@ from app.infraestructure.services import (
     upload_heatmaps_for_extracted_players, upload,
     R2Downloader, prepare_model, read_video
     )
-from app.utils.routes import INPUT_VIDEOS_DIR, MODELS_DIR, OUTPUT_REPORTS_DIR
-from app.logger import *
+import traceback
+
+from app.utils.routes import INPUT_VIDEOS_DIR, MODEL_PATH, MODELS_DIR, OUTPUT_REPORTS_DIR
+from app.logger import debug_logger, error_logger, info_logger
 
 def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] | None:
     try:
         export_data_file = OUTPUT_REPORTS_DIR / f"export_data_match_{match_id}.txt"
         export_data_file.parent.mkdir(parents=True, exist_ok=True)
-        print("Archivo de reporteria creado: ", export_data_file.exists())
-        
-        if not export_data_file.exists():
-            export_data_file.touch()
-            info_logger.info("Volviendo a intentar: Archivo de reporteria creado en: " + export_data_file.as_posix())
+        export_data_file.touch(exist_ok=True)
+        print("Archivo de reporteria creado: ", export_data_file.exists())        
     except Exception as e:
         print(f"Error creando archivo de reporteria: {e}")
         raise e
@@ -45,10 +45,9 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
     }
     
     print("Prepara el modelo si es necesario...")
-    model_path = MODELS_DIR / "football_model.torchscript"
     prepare_model(
-        model_path=model_path,
-        source_path=model_path.parent)
+        model_path=MODEL_PATH,
+        source_path=MODEL_PATH.parent)
     
     # Descarga video
     downloader = R2Downloader()
@@ -56,12 +55,12 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
     # video_name = "cc6dcc09-b6ed-41ad-8a83-3532ae0e11cc-VID_20260105_211836.mp4"
 
     print(f"Descargando video {video_name}...")
-    download_path = Path(INPUT_VIDEOS_DIR, video_name)
-    downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
-    downloader.stream_download(key=video_name, destination_path=download_path.as_posix())
+    # download_path = Path(INPUT_VIDEOS_DIR, video_name)
+    # downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
+    # downloader.stream_download(key=video_name, destination_path=download_path.as_posix())
     print(f"Video descargado en {INPUT_VIDEOS_DIR.as_posix()}")
-    print(f"Video descargado en {download_path.as_posix()}")
-
+    # print(f"Video descargado en {download_path.as_posix()}")
+    download_path = Path("C:\\Users\\Usuario\\Desktop\\temp\\res\\generic_video.mkv")
     # -----------------------------
     # LECTURA DEL VIDEO
     # -----------------------------
@@ -73,7 +72,7 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
 
     try:
         tracker = TrackerService(
-            model_path.as_posix()
+            MODEL_PATH.as_posix()
         )
 
         try:
@@ -91,6 +90,7 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
         tools.start(db=db, first_frame=first_frame)
     except Exception as e:
         error_logger.error(f"Error initializing services: {e}")
+        error_logger.error(traceback.format_exc())
         raise e
 
     frame_num = 0
@@ -99,20 +99,18 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
     #                               LOOP PRINCIPAL
     # ==========================================================================
     empty_batches = 0
-    max_empty_batches = 10
-    max_processing_time = 1000 # 10 minutos por Debug
     saved_player_ids: List[int] = []
     for batch in video_stream:
         if not batch or len(batch) == 0:
             empty_batches += 1
-            if empty_batches >= max_empty_batches:
+            if empty_batches >= MAX_EMPTY_BATCHES:
                 debug_logger.debug("Múltiples batches vacíos consecutivos, finalizando procesamiento.")
                 break
             continue
 
         empty_batches = 0
 
-        if time.time() - start_time > max_processing_time:
+        if time.time() - start_time > MAX_PROCESSING_TIME * 4:
             debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
             break
 
@@ -122,7 +120,6 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
             frame_num=frame_num,
             db=db,
             tracker=tracker,
-            tools=tools,
             metrics=metrics,
             images_per_player=images_per_player,
             saved_player_ids=saved_player_ids,
