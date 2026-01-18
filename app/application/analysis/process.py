@@ -117,7 +117,7 @@ def process_frame(
                 continue
 
             # -------------------------------------------------------
-            # 5. ASIGNACIÓN DEL BALÓN A JUGADOR
+            # 5. ASIGNACIÓN DEL BALÓN A JUGADOR, DEPENDE DE LA EJECUCION DEL PUNTO 4
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 5: Asignando balón a jugador...")
@@ -142,7 +142,7 @@ def process_frame(
                 continue
 
             # -------------------------------------------------------
-            # 6. ASIGNAR EQUIPO
+            # 6. ASIGNAR EQUIPO, ACCION INDEPENDIENTE
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 6: Asignando equipo...")
@@ -178,19 +178,23 @@ def process_frame(
                         info_logger.info("[ProcessRun] Crop del dorsal vacío, omitiendo reconocimiento.")
                     else:
                         proc = tools.number_recognizer._preprocess(crop)
+                        info_logger.info("[ProcessRun] Reconociendo número de jugador...")
 
                         def update_best_num(num: Optional[int], conf: float):
-                            if num is not None and conf > 0.25:
+                            if num is not None and conf > 0.2:
                                 numbers_data[player_id][num] += conf
 
                         must_flush = tools.trocr_buffer.push(proc, update_best_num)
                         if must_flush:
+                            info_logger.info("[ProcessRun] Flushing buffer...")
                             tools.number_recognizer.flush_buffer(tools.trocr_buffer)
 
                     # decisión inmediata (con lo que haya hasta ahora)
                     best_num = max(numbers_data[player_id], key=numbers_data[player_id].get, default=None) # type: ignore
+                    info_logger.info(f"[ProcessRun] Número de jugador reconocido: {best_num}")
                     player = tools.player_records.get_player(player_id)
                     if best_num is not None and player is not None:
+                        info_logger.info(f"[ProcessRun] Actualizando número de jugador {best_num}...")
                         id = int(f'{player.id}')
                         tools.player_records.patch(id, {"shirt_number": best_num})
             except Exception as e:
@@ -238,7 +242,7 @@ def process_frame(
                 if error == -1: break
                 errors = error
             # -------------------------------------------------------
-            # 8. EXPORTAR DATOS DEL FRAME
+            # 8. EXPORTAR DATOS DEL FRAME, accion independiente
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 8: Exportando datos del frame...")
@@ -269,11 +273,9 @@ def process_frame(
         return frame_num, saved_player_ids, metrics
 
     except Exception as e:
-        # Este catch solo se activa si algo sale fuera del loop de frames
         error_logger.error(f"Error fuera del loop de frames: {e}")
         raise e
     finally:
-        # Asegurar flush de logs
         for hdlr in info_logger.handlers[:]:
             hdlr.flush()
 

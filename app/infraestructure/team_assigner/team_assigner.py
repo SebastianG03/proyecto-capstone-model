@@ -1,6 +1,8 @@
 import json
 import logging
-from collections import deque, defaultdict
+import os
+from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
 from cv2.typing import MatLike
 from sqlalchemy.orm import Session
@@ -9,9 +11,13 @@ import cv2
 import numpy as np
 from sklearn.cluster import MiniBatchKMeans
 from app.entities.collections import TrackCollectionPlayer
-from app.entities.models.PlayerModels import PlayerState, Player
+from app.entities.models.PlayerModels import PlayerState
 from app.entities.utils.singleton import Singleton
-from app.logger import *
+
+logger = logging.getLogger(__name__)
+
+_executor = ThreadPoolExecutor(max_workers=2)
+
 
 class TeamAssigner(metaclass=Singleton):
     """
@@ -39,6 +45,7 @@ class TeamAssigner(metaclass=Singleton):
             lambda: deque(maxlen=smoothing_window)
         )
         self.player_team_cache: Dict[int, int] = {}  # última decisión estable
+        self._last_seen: Dict[int, int] = {}
 
         # parámetros
         self.smoothing_window = smoothing_window
@@ -88,16 +95,11 @@ class TeamAssigner(metaclass=Singleton):
         return np.clip(bgr * scale, 0, 255).astype(np.uint8)
 
     # --------------------------------------------------
-    #  NUEVO: extract_player_color  -> K-means RGB simple
+    #  extract_player_color  -> K-means RGB simple
     # --------------------------------------------------
     def extract_player_color(self, frame: MatLike, bbox: List[int]) -> Optional[np.ndarray]:
         """
         Devuelve el color dominante (BGR, float32) del torso del jugador.
-        Copia exacta del pipeline que ya te funcionaba:
-        - crop + torso
-        - normaliza iluminación
-        - K-means 3 clusters sobre RGB
-        - se queda con el cluster más grande
         """
         crop = self._safe_crop(frame, bbox)
         if crop is None:
@@ -105,6 +107,11 @@ class TeamAssigner(metaclass=Singleton):
         torso = self._torso_region(crop)
         if torso is None or torso.size == 0:
             return None
+
+        # downsample si imagen grande
+        h, w = torso.shape[:2]
+        if h * w > 90_000:
+            torso = cv2.resize(torso, (w // 2, h // 2), interpolation=cv2.INTER_AREA)
 
         # 1. Iluminancia constante
         torso = self._illuminant_normalize(torso)
@@ -128,7 +135,7 @@ class TeamAssigner(metaclass=Singleton):
             dominant_rgb.reshape(1, 1, 3).astype(np.uint8), cv2.COLOR_RGB2BGR
         )[0, 0]
 
-        return dominant_bgr.astype(np.float32)  # 0-255 seguro
+        return dominant_bgr.astype(np.float64)  # 0-255 seguro
 
     # ---------------------------
     # Bootstrap (one-shot) de colores de equipo
@@ -136,7 +143,6 @@ class TeamAssigner(metaclass=Singleton):
     def bootstrap_colors(self, frame: MatLike, players: List[PlayerState]) -> bool:
         """
         Entrena MiniBatchKMeans una sola vez cuando haya suficientes colores válidos.
-        players: lista de PlayerStateModel con bbox disponible
         """
         if self.kmeans is not None:
             return True
@@ -151,32 +157,25 @@ class TeamAssigner(metaclass=Singleton):
                 samples.append(c)
 
         if len(samples) < self.min_bootstrap_players:
-            logging.debug(f"Bootstrap: need >={self.min_bootstrap_players} valid players, got {len(samples)}")
+            logger.debug(f"Bootstrap: need >={self.min_bootstrap_players} valid players, got {len(samples)}")
             return False
 
         try:
-            mbk = MiniBatchKMeans(n_clusters=2, batch_size=32, random_state=0)
+            mbk = MiniBatchKMeans(n_clusters=2, batch_size=32)
             mbk.fit(np.vstack(samples))
             self.kmeans = mbk
             centers = mbk.cluster_centers_
             self.team_colors = {1: centers[0].astype(np.float32), 2: centers[1].astype(np.float32)}
-            logging.info("TeamAssigner: bootstrap complete, 2 team colors learned.")
+            logger.info("TeamAssigner: bootstrap complete, 2 team colors learned.")
             return True
         except Exception as e:
-            logging.debug(f"Bootstrap KMeans failed: {e}")
+            logger.debug(f"Bootstrap KMeans failed: {e}")
             return False
 
     # ---------------------------
     # Predicción rápida por color
     # ---------------------------
-    def _lab_distance(self, lab1: np.ndarray, lab2: np.ndarray, wL: float = 0.2) -> float:
-        dl = float(lab1[0] - lab2[0])
-        da = float(lab1[1] - lab2[1])
-        db = float(lab1[2] - lab2[2])
-        return (wL * (dl ** 2) + da ** 2 + db ** 2) ** 0.5
-
     def _to_lab(self, bgr: np.ndarray) -> np.ndarray:
-        # Convert BGR 0-255 (shape (3,) or (1,1,3)) to Lab float32
         arr = np.asarray(bgr, dtype=np.uint8).reshape(1, 1, 3)
         lab = cv2.cvtColor(arr, cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
         return lab
@@ -184,146 +183,104 @@ class TeamAssigner(metaclass=Singleton):
     def _closest_team_from_color(self, color_bgr: np.ndarray) -> Optional[int]:
         if not self.team_colors:
             return None
-        try:
-            lab_c = self._to_lab(color_bgr)
-            best = None
-            best_d = float('inf')
-            for team, col in self.team_colors.items():
-                lab_t = self._to_lab(np.array(col, dtype=np.uint8))
-                d = self._lab_distance(lab_c, lab_t)
-                if d < best_d:
-                    best_d = d
-                    best = team
-            return best
-        except Exception as e:
-            error_logger.error(f"[Team Assigner] Closest color error: {e}")
-            return None
+        lab_c = self._to_lab(color_bgr)
+        centers = np.array(list(self.team_colors.values()), dtype=np.uint8)
+        labs = np.array([self._to_lab(c) for c in centers])
+        dif = labs - lab_c
+        dist = np.einsum('ij,ij->i', dif, dif)
+        return int(np.argmin(dist)) + 1
 
     def _predict_from_color(self, color_bgr: np.ndarray) -> Optional[int]:
-        # Prefer KMeans prediction; on failure fallback to Lab-distance nearest
         if self.kmeans is None:
             return self._closest_team_from_color(color_bgr)
         try:
-            label = int(self.kmeans.predict(color_bgr.reshape(1, -1))[0])
+            X = np.atleast_2d(color_bgr.astype(np.float64))
+            label = int(self.kmeans.predict(X)[0])
             return label + 1
         except Exception as e:
-            error_logger.error(f"[Team Assigner] KMeans predict error: {e}, falling back to Lab distance")
+            logger.error("KMeans predict error: %s", e, exc_info=True)
             return self._closest_team_from_color(color_bgr)
-
-
     # ---------------------------
-    # API principal (manteniendo nombre de la clase)
+    # API principal
     # ---------------------------
     def assign_team_colors(self, frame: MatLike, players: List[PlayerState]) -> None:
-        """
-        Método principal: intenta bootstrap si no hay modelo; no reentrena si ya existe.
-        """
         if self.kmeans is None or (len(players) % self.min_bootstrap_players == 0 and len(players) != self.last_kmeans_train_length):
             self.last_kmeans_train_length = len(players)
-            debug_logger.debug(f"[Team Assigner] Actual train length: {self.last_kmeans_train_length}")
             self.bootstrap_colors(frame, players)
-        # Aquí podrías actualizar cache, smoothing o predicciones por frame
 
-    def get_player_team(self, frame: MatLike, record: PlayerState, frame_num: int, db: Session):
+    def get_player_team(self, frame: MatLike, record: PlayerState, frame_num: int, db: Session) -> int:
         """
-        Devuelve 1, 2 o -1. Utiliza smoothing temporal por jugador
-        para evitar saltos por recortes malos.
+        Devuelve 1, 2 o -1. Utiliza smoothing temporal por jugador.
         """
         try:
-            # obtener identificador estable: player_id preferible, si no id
-            debug_logger.debug(f"[Team Assigner] Getting player team for record: {record}")
-            player_record = TrackCollectionPlayer(db)
-            player_id = getattr(record, "id", None)
-            if player_id is None:
-                debug_logger.debug("[Team Assigner] Record has no id attribute.")
-                return -1, None
-
+            player_id = int(f'{record.player_id}')
             bbox = record.get_bbox()
-            debug_logger.debug(f"[Team Assigner] Player ID: {player_id}, BBox: {bbox}")
+
+            # cleanup cada 300 frames
+            if frame_num % 300 == 0:
+                cutoff = frame_num - self.smoothing_window
+                to_del = [pid for pid, f in self._last_seen.items() if f < cutoff]
+                for pid in to_del:
+                    self.player_team_history.pop(pid, None)
+                    self.player_team_cache.pop(pid, None)
+                    self._last_seen.pop(pid, None)
+
             if not bbox:
-                # usar majority vote de historial
-                debug_logger.debug("[Team Assigner] No bbox available, using history for team assignment.")
                 hist = self.player_team_history[player_id]
-                if len(hist) == 0:
-                    return -1, None
-                # devolver la decisión cacheada o mayoría
-                return self._majority_vote(hist)
+                return self._majority_vote(hist) if hist else -1
 
-            # si no hay modelo entrenado → -1 (o podrías intentar bootstrap local)
-            debug_logger.debug("[Team Assigner] Checking KMeans model...")
+            self._last_seen[player_id] = frame_num
+
             if self.kmeans is None:
-                debug_logger.debug("[Team Assigner] KMeans not initialized yet when predicting team.")
+                player_record = TrackCollectionPlayer(db)
                 self.assign_team_colors(frame=frame, players=player_record.get_all_states())
-                debug_logger.debug("[Team Assigner] After attempting bootstrap.")
 
-            debug_logger.debug("[Team Assigner] Extracting player color...")
             color = self.extract_player_color(frame, bbox)
-            debug_logger.debug(f"[Team Assigner] Extracted color: {color}")
             if color is None:
-                # no color -> fallback
-                debug_logger.debug("[Team Assigner] No pudo extraer color del jugador, usando historial.")
                 hist = self.player_team_history[player_id]
-                if len(hist) == 0:
-                    return -1, None
-                return self._majority_vote(hist)
+                return self._majority_vote(hist) if hist else -1
 
-            debug_logger.debug("[Team Assigner] Prediciendo equipo desde color...")
             pred = self._predict_from_color(color)
-            debug_logger.debug(f"[Team Assigner] Predicted team: {pred}")
             if pred is None:
-                debug_logger.debug("[Team Assigner] No pudo predecir equipo desde color.")
-                return -1, None
+                hist = self.player_team_history[player_id]
+                return self._majority_vote(hist) if hist else -1
 
-            # update smoothing history
             self.player_team_history[player_id].append(pred)
-
-            # si la historia tiene suficiente longitud, usar mayoría; sino usar pred
-            debug_logger.debug("[Team Assigner] Usando smoothing history...")
             hist = self.player_team_history[player_id]
-            debug_logger.debug(f"[Team Assigner] History: {hist}")
             team = self._majority_vote(hist) if len(hist) >= max(3, self.smoothing_window // 2) else pred
-            debug_logger.debug(f"[Team Assigner] Team after smoothing: {team}")
+            team = int(team)
+            self.player_team_cache[player_id] = team
 
-            # actualizar cache y devolver
-            debug_logger.debug("[Team Assigner] Actualizando cache...")
-            self.player_team_cache[player_id] = int(team)
-            debug_logger.debug(f"[Team Assigner] Team selected: {team} y color selected: {self.team_colors.get(team)}")
-            color = self.team_colors.get(team) if team in self.team_colors else None
+            # async db write
+            player_record = TrackCollectionPlayer(db)
             player_data = player_record.get_player(int(f'{record.player_id}'))
-            if not player_data:
-                raise ValueError(f"[Team Assigner] No se obtuvo el jugador con player id {record.player_id}")
-            
-            debug_logger.debug(f"[Team Assigner] Datos del jugador obtenido: {player_data.to_dict()}")
-            player_record.patch(
-                int(f'{player_data.id}'),
-                {
-                    "team": team,
-                    "color": json.dumps(color.tolist()) if color is not None and color.any() else None
-                }
-            )
-            debug_logger.debug(f"[Team Assigner] Equipo asignado al jugador {player_id}, con id {player_data.id}: {team}")
-            return int(team)
+            if player_data:
+                _executor.submit(self._async_patch, player_record, player_data.id, team,
+                                 self.team_colors.get(team))
+            return team
         except Exception as e:
-            error_logger.error(f"[Team Assigner] Error predicting team: {e}")
-            return -1, None
-
-    # ---------------------------
-    # Utilidades
-    # ---------------------------
-    def _majority_vote(self, hist: deque) -> int:
-        if len(hist) == 0:
+            logger.error("Error predicting team: %s", e, exc_info=True)
             return -1
-        counts = {}
-        for v in hist:
-            counts[v] = counts.get(v, 0) + 1
-        # devolver valor con mayor ocurrencia; en empate preferir valor anterior cacheado
-        sorted_counts = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
-        top_label = sorted_counts[0][0]
-        return int(top_label)
+
+
+    def _async_patch(self, player_record, db_id, team, color):
+        try:
+            color_str = json.dumps(color.tolist()) if color is not None and color.any() else None
+            player_record.patch(db_id, {"team": team, "color": color_str})
+        except Exception as e:
+            logger.error("Async patch failed: %s", e, exc_info=True)
+
+    def _majority_vote(self, hist: deque) -> int:
+        if not hist:
+            return -1
+        values = np.array(hist)
+        uniq, counts = np.unique(values, return_counts=True)
+        return int(uniq[np.argmax(counts)])
 
     def reset(self):
         """Resetea estado aprendido (colores, historial)."""
         self.kmeans = None
-        self.team_colors = {}
+        self.team_colors.clear()
         self.player_team_history.clear()
         self.player_team_cache.clear()
+        self._last_seen.clear()

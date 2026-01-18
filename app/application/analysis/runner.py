@@ -52,18 +52,20 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
     # Descarga video
     downloader = R2Downloader()
     
-    # video_name = "cc6dcc09-b6ed-41ad-8a83-3532ae0e11cc-VID_20260105_211836.mp4"
+    #video_name = "cc6dcc09-b6ed-41ad-8a83-3532ae0e11cc-VID_20260105_211836.mp4"
 
     print(f"Descargando video {video_name}...")
-    # download_path = Path(INPUT_VIDEOS_DIR, video_name)
-    # downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
-    # downloader.stream_download(key=video_name, destination_path=download_path.as_posix())
+    #download_path = Path(INPUT_VIDEOS_DIR, video_name)
+    #downloader.build_destination_path(key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix())
+    #downloader.stream_download(key=video_name, destination_path=download_path.as_posix())
+    download_path = Path("C:\\Users\\DavidGuaman\\Desktop\\universidad-capstone\\IAAnalisisModel\\app\\res\\input_videos\\9.mp4")
     print(f"Video descargado en {INPUT_VIDEOS_DIR.as_posix()}")
-    # print(f"Video descargado en {download_path.as_posix()}")
-    download_path = Path("C:\\Users\\Usuario\\Desktop\\temp\\res\\generic_video.mkv")
+    print(f"Video descargado en {download_path.as_posix()}")
     # -----------------------------
     # LECTURA DEL VIDEO
     # -----------------------------
+    print(download_path)
+    print(type(download_path))
     video_stream = read_video(download_path.as_posix())
     images_per_player = 3
     if not video_stream:
@@ -110,7 +112,7 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
 
         empty_batches = 0
 
-        if time.time() - start_time > MAX_PROCESSING_TIME * 4:
+        if time.time() - start_time > 6000: #MAX_PROCESSING_TIME * 4:
             debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
             break
 

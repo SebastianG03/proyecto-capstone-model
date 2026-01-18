@@ -32,11 +32,11 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.model = self.__load_detector__(model_path)
         self.tracker = sv.ByteTrack(
-            frame_rate=30,
-            lost_track_buffer=60,
-            track_activation_threshold=0.15,
+            frame_rate=25,
+            lost_track_buffer=20,
+            track_activation_threshold=0.5,
             minimum_matching_threshold=0.9,
-            minimum_consecutive_frames=3
+            minimum_consecutive_frames=1
         )
         self.tracker_factory = TrackerFactory(self.model)
         self.tracker_path = "bytetrack.yaml"
@@ -45,6 +45,10 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
     def __load_detector__(self, model_path: str) -> YOLO:
         model = YOLO(model=model_path, task='obb', verbose=False)
         # model.to(self._device)
+        if self._device == 'cpu':
+            self.model.model = torch.compile(self.model.model, mode='max-autotune')
+        else:
+            self.model.model = torch.compile(self.model.model, mode='reduce-overhead')
         if MODEL_USE_HALF_PRECISION:
             try:
                 model.half()
@@ -95,7 +99,13 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         Nota: el modelo YOLO puede aceptar listas y devolver lista de Results.
         """
         print("Detectando en frames...")
-        return self.model.predict(frames, conf=conf)
+        return self.model.predict(
+            frames,
+            conf=conf,
+            iou=0.9,
+            agnostic_nms=False,
+            max_det=1000,
+            nms=False)
 
     def process_frame(
         self,

@@ -79,7 +79,7 @@ class PlayerTracker(Tracker):
 
 
         for bbox_arr, raw_tid in zip(player_bboxes, player_ids):
-            if raw_tid is None:
+            if raw_tid is None or bbox_arr is None:
                 continue
             try:
                 track_id = int(raw_tid)

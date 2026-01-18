@@ -7,6 +7,7 @@ from typing import Optional, Sequence, Tuple, List
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 from peft import PeftModel
 from .trocr_buffer import TROCRBuffer
+from app.logger import debug_logger
 
 class PlayerNumberDetector:
     MIN_CONF = 0.50
@@ -57,6 +58,7 @@ class PlayerNumberDetector:
     def _infer_many(self, crops: List[np.ndarray]) -> List[Tuple[Optional[int], float]]:
         images = [Image.fromarray(c, mode='L').convert('RGB') for c in crops]
         pixel_values = self.processor(images=images, return_tensors="pt").pixel_values.to(self.device)
+        debug_logger.debug(f'[PlayerNumberDetector] Input shape: {pixel_values.shape}')
 
         with torch.no_grad():
             out = self.model.generate(
@@ -67,6 +69,8 @@ class PlayerNumberDetector:
 
         texts = self.processor.batch_decode(out.sequences, skip_special_tokens=True)
         probs = torch.stack(out.scores, dim=1).softmax(-1)
+        debug_logger.debug(f'[PlayerNumberDetector] Texts: {texts}')
+        debug_logger.debug(f'[PlayerNumberDetector] Probs: {probs}')
 
         results = []
         for i, txt in enumerate(texts):
@@ -80,13 +84,14 @@ class PlayerNumberDetector:
             tok_ids = out.sequences[i, 1:-1]
             conf = probs[i, torch.arange(tok_ids.shape[0]), tok_ids].mean().item()
             results.append((num, conf))
+        debug_logger.debug(f'[PlayerNumberDetector] Results: {results}')
         return results
 
-    # ---------- integración con buffer ----------
     def flush_buffer(self, buffer: TROCRBuffer):
         crops, cbks = buffer.flush()
         if not crops:
             return
         preds = self.predict_batch(crops)
         for cb, (num, conf) in zip(cbks, preds):
+            debug_logger.debug(f'[PlayerNumberDetector] Callback: {num=}, {conf=}')
             cb(num, conf)

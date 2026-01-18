@@ -97,7 +97,10 @@ async def export_data(
             if (i + 1 ) % 1000 == 0:
                 print(f"Exportados {i + 1} registros de PlayerState...")
         print("Exportación de datos completada.")
-
+        
+        file_stats = OUTPUT_REPORTS_DIR / f"stats_match_{match_id}.json"
+        file_stats.parent.mkdir(parents=True, exist_ok=True)
+        file_stats.write_text(json.dumps(player_stats, indent=2, ensure_ascii=False), encoding="utf-8")
 
         player_output_file = OUTPUT_REPORTS_DIR / f"player_states_match_{match_id}.json"
         ball_output_file = OUTPUT_REPORTS_DIR / f"ball_events_match_{match_id}.json"

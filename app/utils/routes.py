@@ -14,6 +14,7 @@ DATABASE_DIR = BASE_RES_DIR / "database"
 MODELS_DIR = BASE_RES_DIR / "models"
 MODEL_PATH = MODELS_DIR / MODEL_NAME
 TROCR_PATH = MODELS_DIR / "trocr"
+
 def ensure_directories():
     """
     Asegura que las carpetas necesarias existan.

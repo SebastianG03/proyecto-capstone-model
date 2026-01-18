@@ -33,6 +33,8 @@ def read_video(video_path: str, batch_size: int = 16) -> Generator[List[Tuple[Ma
     info_logger.info(f"Abriendo video: {video_path}")
     cap = _open_capture(video_path)
     frame_rate = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    info_logger.info(f"[READ VIDEO] Total frames: {total_frames}, FPS: {frame_rate}")
     globals = GlobalValuesStore()
     if frame_rate and frame_rate != globals.fps:
         info_logger.info(f"FPS detectado: {frame_rate}, actualizando valor global.")
@@ -92,6 +94,9 @@ def extract_player_images(
     frame_skip: int = 5,
 ):
     try:
+        
+        if frame_index % 10 != 0:
+            return player_image_counts, last_frame_taken, None
         debug_logger.debug(f"Extrayendo imagen de jugador en frame {frame_index}")
         folder = pathlib.Path(output_folder)
         folder.mkdir(parents=True, exist_ok=True)

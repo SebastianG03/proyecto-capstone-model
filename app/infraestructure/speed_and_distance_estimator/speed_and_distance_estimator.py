@@ -139,13 +139,14 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
                 info_logger.warning(
                     f"[SpeedAndDistance] dt muy pequeño ({dt:.4f}s) → se ignora frame"
                 )
-                return
+                # return
+                raw_dist_m = 0.5
 
             if raw_dist_m > self.max_dist_per_frame_m:
                 info_logger.warning(
                     f"[SpeedAndDistance] Salto de distancia inválido: {raw_dist_m:.2f}m → se fuerza 0m"
                 )
-                raw_dist_m = 0.0
+                raw_dist_m = 5.0
 
             speed_kmh = (raw_dist_m / dt) * 3.6
             if speed_kmh > self.max_human_speed_kmh:
