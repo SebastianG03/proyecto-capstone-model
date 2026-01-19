@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.application.post_process.proccess_final_data import analyze_match
 from app.utils.routes import OUTPUT_REPORTS_DIR
 from app.logger import error_logger
+from app.core.config import DEBUG
 import traceback
 
 async def process_video_async(video_name: str, match_id: int):
@@ -18,7 +19,7 @@ async def process_video_async(video_name: str, match_id: int):
     Ejecuta el análisis en segundo plano con una BD en memoria aislada.
     """
     print(f"Iniciando análisis en background para video: {video_name}, match_id: {match_id}")
-    db, engine = create_temporary_database(match_id)
+    db, engine, db_path = create_temporary_database(match_id)
 
     try:
         print(f"Ejecutando análisis en background para video: {video_name}")
@@ -34,6 +35,8 @@ async def process_video_async(video_name: str, match_id: int):
         print("Cerrando sesión de base de datos y liberando recursos.")
         db.close()
         engine.dispose()
+        if not DEBUG:
+            db_path.unlink()
 
 
 
@@ -48,6 +51,9 @@ async def process_run(db: Session, video_name: str, match_id: int):
         error_logger.error(f"[BACKGROUND_TASK] Error al analizar el video, error: {e}")
         error_logger.error(traceback.format_exc())
         raise e
+    finally:
+        if not DEBUG:
+            
 
 async def export_data(
     db: Session,
@@ -113,8 +119,11 @@ async def export_data(
         
         print("Subiendo datos a stats service..")
         httpx.post(
-            url="http://127.0.0.1:8090/api/upload_consolidated/",
-            json=player_stats)
+            url=f"{STATS_NOTIFY_URL}/update-stats/",
+            json={
+                "match_id": match_id,
+                "stats": player_stats
+            })
     except Exception as e:
         print(f"Error al exportar datos: {e}")
         raise e

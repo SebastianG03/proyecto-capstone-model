@@ -43,26 +43,30 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         logging.info(f"TrackerServiceBase initialized on device={self._device}")
 
     def __load_detector__(self, model_path: str) -> YOLO:
-        model = YOLO(model=model_path, task='obb', verbose=False)
-        # model.to(self._device)
-        if self._device == 'cpu':
-            self.model.model = torch.compile(self.model.model, mode='max-autotune')
-        else:
-            self.model.model = torch.compile(self.model.model, mode='reduce-overhead')
-        if MODEL_USE_HALF_PRECISION:
-            try:
-                model.half()
-            except Exception as e:
-                logging.warning(f"Could not enable half precision: {e}")
-        return model
-
-    def __del__(self):
         try:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                logging.info("CUDA cache cleared on TrackerServiceBase deletion.")
+            model = YOLO(model_path, task='obb', verbose=False)
+
+            dummy = torch.zeros((1, 3, 640, 640), device=self._device)
+            model(dummy, verbose=False)
+
+            if MODEL_USE_HALF_PRECISION:
+                try:
+                    model.half()
+                except Exception as e:
+                    logging.warning(f"Could not enable half precision: {e}")
+
+            backbone = model.model
+            if isinstance(backbone, torch.nn.Module):
+                mode = "reduce-overhead" if self._device == "cuda" else "max-autotune"
+                model.model = torch.compile(backbone, mode=mode)
+                logging.info(f"torch.compile aplicado ({mode}) en {self._device}")
+            else:
+                logging.warning("No se encontró el grafo nn.Module; torch.compile omitido.")
+
+            return model
         except Exception as e:
-            logging.error(f"Error during TrackerServiceBase deletion: {e}")
+            logging.exception(f"Error loading model: {e}")
+            raise e
 
     def __enter__(self):
         logging.info("Entering context: TrackerServiceBase")

@@ -36,7 +36,7 @@ def create_temporary_database(match_id: int):
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
-    return db, engine
+    return db, engine, db_path
 
 
 # --- Dependency para obtener una sesión de DB ---

@@ -7,6 +7,7 @@ from app.infraestructure.services.upload_service import upload_file
 from app.utils.routes import OUTPUT_VIDEOS_DIR
 from sqlalchemy.orm import Session
 from app.logger import debug_logger
+from app.core.config import DEBUG
 
 def upload_heatmaps_for_extracted_players(
     db: Session, match_id: int, extracted_player_ids: set
@@ -25,11 +26,12 @@ def upload_heatmaps_for_extracted_players(
     claves como valores correspondientes a los nombres de los archivos subidos en
     AWS S3.
     """
+    base_path = OUTPUT_VIDEOS_DIR
+    players_path = base_path / "players"
+    files_in_folder = list(players_path.glob("heatmap_player_*.png"))
+    print(f"Archivos encontrados en players: {[f.name for f in files_in_folder]}")
+
     try:
-        base_path = OUTPUT_VIDEOS_DIR
-        players_path = base_path / "players"
-        files_in_folder = list(players_path.glob("heatmap_player_*.png"))
-        print(f"Archivos encontrados en players: {[f.name for f in files_in_folder]}")
 
         if not files_in_folder:
             print("No se encontraron archivos de heatmaps en la carpeta de players.")
@@ -79,3 +81,9 @@ def upload_heatmaps_for_extracted_players(
     except Exception as e:
         print(f"Error al subir heatmaps: {e}")
         raise e
+    finally:
+        if DEBUG:
+            debug_logger.debug("[UPLOAD HEATMAP] En debug, no se limpian los archivos.")
+        else:
+            for file in files_in_folder:
+                file.unlink()

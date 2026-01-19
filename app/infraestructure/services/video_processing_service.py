@@ -9,7 +9,6 @@ from app.entities.models.PlayerModels import Player, PlayerState
 from app.entities.utils.global_values_store import GlobalValuesStore
 from app.logger.logger import debug_logger, info_logger, error_logger
 
-
 def _open_capture(video_path: str):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -94,6 +93,8 @@ def extract_player_images(
     frame_skip: int = 5,
 ):
     try:
+        if not DEBUG:
+            return player_image_counts, last_frame_taken, None
         
         if frame_index % 10 != 0:
             return player_image_counts, last_frame_taken, None

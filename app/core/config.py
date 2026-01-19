@@ -1,9 +1,6 @@
 import os
 from decouple import config
-import ultralytics
 
-# ULTRALYTICS
-ultralytics.settings.update({'verbose': False})
 
 # S3
 S3_API=                         str(config('S3_API'))
