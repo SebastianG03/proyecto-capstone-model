@@ -1,5 +1,6 @@
 from collections import defaultdict
 import json
+from os import devnull
 from pathlib import Path
 import time
 import tracemalloc
@@ -191,8 +192,8 @@ def process_frame(
 
                         def update_best_num(num: Optional[int], conf: float):
                             if num is not None and conf > 0.60:
-                                numbers_data[player_id][num] += conf
                                 debug_logger.debug(f"[ProcessRun] Número {num} con confianza {conf:.4f} añadido al jugador {player_id}.")
+                                numbers_data[player_id][num] += conf
 
                         must_flush = tools.trocr_buffer.push(proc, update_best_num)
                         if must_flush:
@@ -202,6 +203,8 @@ def process_frame(
                     # decisión inmediata (con lo que haya hasta ahora)
                     best_num = max(numbers_data[player_id], key=numbers_data[player_id].get, default=None) # type: ignore
                     info_logger.info(f"[ProcessRun] Número de jugador reconocido: {best_num}")
+                    debug_logger.debug(f"[ProcessRun] Datos completos de números: { {k: dict(v) for k, v in numbers_data.items()} }")
+                    
                     player = tools.player_records.get_player(player_id)
                     if best_num is not None and player is not None:
                         info_logger.info(f"[ProcessRun] Actualizando número de jugador {best_num}...")
@@ -217,7 +220,7 @@ def process_frame(
             try:
                 info_logger.info("[ProcessRun] Detectando goles...")
                 goal_detections = goal_yolo.predict(frame)
-                info_logger.info(f"[ProcessRun] Detectados {len(goal_detections)} goles.")
+                info_logger.info(f"[ProcessRun] Detectados {len(goal_detections)} instancias de arcos.")
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error en goal_yolo: {e}")
                 goal_detections = sv.Detections.empty()

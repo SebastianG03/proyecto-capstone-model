@@ -120,9 +120,11 @@ class GoalScorerDetector:
 
         ball_idx = cls_name_to_id.get("soccer-ball")
         goal_idx = cls_name_to_id.get("soccer-goal")
+        
+        debug_logger.debug(f"[GoalDetector] Class name to id mapping: {cls_name_to_id}")
 
         if ball_idx is None or goal_idx is None:
-            debug_logger.debug("Missing ball or goal class")
+            debug_logger.debug("[GoalDetector] Missing ball or goal class")
             return False, None
 
         mask_ball = detections.class_id == ball_idx
@@ -143,6 +145,7 @@ class GoalScorerDetector:
         scored = (iou > self.iou_threshold) or inside
 
         if not scored:
+            debug_logger.debug(f"[GoalDetector] No goal detected (IoU={iou:.4f}, inside={inside})")
             return False, None
 
         players: List[PlayerState] = TrackCollectionPlayer(db).get_all_states()
@@ -150,18 +153,18 @@ class GoalScorerDetector:
 
         scorer_id = self._most_likely_scorer()
         if scorer_id is None:
-            debug_logger.debug("Goal detected but no clear scorer")
+            debug_logger.debug("[GoalDetector] Goal detected but no clear scorer")
             return True, None
 
         # ---------- incrementar goles en BD ----------------------------------
         collection = TrackCollectionPlayer(db)
         player_row = collection.get_player(scorer_id)
-        info_logger.info(f"Assigning goal to player {scorer_id} with id {player_row.id}") 
+        info_logger.info(f"[GoalDetector] Assigning goal to player {scorer_id} with id {player_row.id}") 
         if player_row is None:
-            error_logger.error(f"Player {scorer_id} not found in DB")
+            error_logger.error(f"[GoalDetector] Player {scorer_id} not found in DB")
             return True, None
 
-        new_goals = (player_row.goals or 0) + 1
+        new_goals = (int(f'{player_row.goals}') or 0) + 1
         collection.patch(int(f'{player_row.id}'), {"goals": new_goals})
-        info_logger.info(f"Goal assigned to player {scorer_id} (total={new_goals})")
+        info_logger.info(f"[GoalDetector] Goal assigned to player {scorer_id} (total={new_goals})")
         return True, scorer_id

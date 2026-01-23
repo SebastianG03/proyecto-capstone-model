@@ -35,7 +35,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             lost_track_buffer=20,
             track_activation_threshold=0.5,
             minimum_matching_threshold=0.9,
-            minimum_consecutive_frames=3
+            minimum_consecutive_frames=1
         )
         self.tracker_factory = TrackerFactory(self.model)
         self.tracker_path = "bytetrack.yaml"
