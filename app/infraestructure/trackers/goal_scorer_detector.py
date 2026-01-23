@@ -14,8 +14,7 @@ from sqlalchemy.orm import Session
 from app.entities.collections import TrackCollectionPlayer
 from app.entities.models.PlayerModels import PlayerState
 from app.infraestructure.services.database import get_db
-
-logger = logging.getLogger(__name__)
+from app.logger import debug_logger, error_logger, info_logger
 
 
 @dataclasses.dataclass
@@ -109,15 +108,21 @@ class GoalScorerDetector:
         Returns (scored, player_id) si se detecta gol y se puede asignar.
         Actualiza directamente la BD vía TrackCollectionPlayer.
         """
+        
         if detections is None or len(detections) == 0:
             return False, None
 
-        cls_name_to_id = {v: k for k, v in detections.data.get("class_name", {}).items()}
+        class_names = detections.data.get("class_name", [])
+        if isinstance(class_names, np.ndarray):
+            class_names = class_names.tolist()
+
+        cls_name_to_id = {name: idx for idx, name in enumerate(class_names)}
+
         ball_idx = cls_name_to_id.get("soccer-ball")
         goal_idx = cls_name_to_id.get("soccer-goal")
 
         if ball_idx is None or goal_idx is None:
-            logger.debug("Missing ball or goal class")
+            debug_logger.debug("Missing ball or goal class")
             return False, None
 
         mask_ball = detections.class_id == ball_idx
@@ -145,17 +150,18 @@ class GoalScorerDetector:
 
         scorer_id = self._most_likely_scorer()
         if scorer_id is None:
-            logger.warning("Goal detected but no clear scorer")
+            debug_logger.debug("Goal detected but no clear scorer")
             return True, None
 
         # ---------- incrementar goles en BD ----------------------------------
         collection = TrackCollectionPlayer(db)
         player_row = collection.get_player(scorer_id)
+        info_logger.info(f"Assigning goal to player {scorer_id} with id {player_row.id}") 
         if player_row is None:
-            logger.error(f"Player {scorer_id} not found in DB")
+            error_logger.error(f"Player {scorer_id} not found in DB")
             return True, None
 
         new_goals = (player_row.goals or 0) + 1
         collection.patch(int(f'{player_row.id}'), {"goals": new_goals})
-        logger.info(f"Goal assigned to player {scorer_id} (total={new_goals})")
+        info_logger.info(f"Goal assigned to player {scorer_id} (total={new_goals})")
         return True, scorer_id

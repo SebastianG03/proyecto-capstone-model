@@ -10,7 +10,7 @@ from .trocr_buffer import TROCRBuffer
 from app.logger import debug_logger
 
 class PlayerNumberDetector:
-    MIN_CONF = 0.50
+    MIN_CONF = 0.60
     IMG_SIZE = (60, 60)
 
     VERT_FRAC_TOP = 0.25

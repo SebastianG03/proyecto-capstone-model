@@ -190,8 +190,9 @@ def process_frame(
                         info_logger.info("[ProcessRun] Reconociendo número de jugador...")
 
                         def update_best_num(num: Optional[int], conf: float):
-                            if num is not None and conf > 0.2:
+                            if num is not None and conf > 0.60:
                                 numbers_data[player_id][num] += conf
+                                debug_logger.debug(f"[ProcessRun] Número {num} con confianza {conf:.4f} añadido al jugador {player_id}.")
 
                         must_flush = tools.trocr_buffer.push(proc, update_best_num)
                         if must_flush:
