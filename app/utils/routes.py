@@ -13,6 +13,7 @@ DATABASE_DIR = BASE_RES_DIR / "database"
 
 MODELS_DIR = BASE_RES_DIR / "models"
 MODEL_PATH = MODELS_DIR / MODEL_NAME
+MODEL_GOALS_PATH = MODELS_DIR / "model_goals.pt"
 TROCR_PATH = MODELS_DIR / "trocr"
 
 def ensure_directories():

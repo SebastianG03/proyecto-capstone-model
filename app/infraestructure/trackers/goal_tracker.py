@@ -1,10 +1,9 @@
 import logging
 from pathlib import Path
-from typing import Optional
 
-import cv2
 import numpy as np
 import supervision as sv
+import torch
 from ultralytics.models import YOLO
 
 logger = logging.getLogger(__name__)
@@ -19,23 +18,23 @@ class GoalTracker:
     def __init__(self,
                  model_path: str | Path,
                  conf_thres: float = 0.25,
-                 iou_thres: float = 0.45,
-                 device: str = "cuda:0"):
+                 iou_thres: float = 0.45):
         """
         model_path: ruta al .pt (p.ej. yolov8n-goal-ball.pt)
         device: "cuda:0", "cpu", "mps", ...
         """
+        
         self.model = YOLO(model_path)
-        self.model.fuse()  # acelera inferencia
+        self.model.fuse()
         self.conf_thres = conf_thres
         self.iou_thres = iou_thres
-        self.device = device
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         # --- supervision helpers ---
         self.box_annotator = sv.BoxAnnotator()
         self.label_annotator = sv.LabelAnnotator(text_scale=0.5)
 
-        logger.info(f"GoalYOLODetector ready: {model_path} on {device}")
+        logger.info(f"GoalYOLODetector ready: {model_path} on {self.device}")
 
     def predict(self, frame: np.ndarray) -> sv.Detections:
         """

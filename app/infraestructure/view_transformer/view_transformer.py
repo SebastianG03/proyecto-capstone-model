@@ -156,7 +156,7 @@ class ViewTransformer:
                 error_logger.error(f"[ViewTransformer] Coordenadas inválidas detectadas: x={px}, y={py}")
                 return None, None
                 
-            max_reasonable_value = 1000000
+            max_reasonable_value = 9999999
             if abs(px) > max_reasonable_value or abs(py) > max_reasonable_value:
                 error_logger.error(f"[ViewTransformer] Coordenadas corruptas (demasiado grandes): x={px}, y={py}")
                 return None, None

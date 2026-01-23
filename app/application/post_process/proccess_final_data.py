@@ -51,7 +51,7 @@ def analyze_match(
             debug_logger.debug(f"[ANALYZE_MATCH] Jugador {pid} - Tiempo total (s): {time_s}")
             time_s = min(time_s, 1200.0)
         else:
-            time_s = 1.0  # fallback para evitar división por cero
+            time_s = 1.0
 
         # Calcular velocidad promedio correctamente
         avg_speed_kmh = (total_distance_km / (time_s / 3600.0)) if time_s > 0 else 0.0
@@ -109,6 +109,7 @@ def analyze_match(
             "km_run": round_up(total_distance_km, 3),
             "shots_on_target": 0,
             "has_goal": False,
+            "goals": player_info[pid].get("goals"),
             "heatmap_image_path": heatmap_route,
             "started_at": start_time.isoformat()
         }

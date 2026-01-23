@@ -8,15 +8,19 @@ from cv2.typing import MatLike
 import numpy as np
 from sqlalchemy.orm import Session
 
+import supervision as sv
+
 from app.entities.models.PlayerModels import Player, PlayerState
 from app.entities.utils.global_values_store import GlobalValuesStore
 from app.infraestructure.services.video_processing_service import extract_player_images
+from app.infraestructure.trackers.goal_scorer_detector import GoalScorerDetector
+from app.infraestructure.trackers.goal_tracker import GoalTracker
 from app.infraestructure.trackers.tracker_service import TrackerService
 from app.application.analysis.assign_ball import assign_ball_to_player
 from app.application.analysis.process_tracks import process_tracks_and_position
 from app.infraestructure.services.bbox_processor_service import calculate_area_boundary_ends
 from app.entities.utils import analysis_context
-from app.utils.routes import OUTPUT_IMAGES_DIR
+from app.utils.routes import MODEL_GOALS_PATH, OUTPUT_IMAGES_DIR
 from app.logger import *
 
 def process_frame(
@@ -42,6 +46,8 @@ def process_frame(
     numbers_data = defaultdict(lambda: defaultdict(float))
     info_logger.info(f"[ProcessRun] Iniciando procesamiento de lote de frames en timestamp {start_time}")
     errors = 0
+    goal_yolo = GoalTracker(MODEL_GOALS_PATH)
+    goal_scorer = GoalScorerDetector(iou_threshold=0.0, pixel_threshold=200.0)
     try:
         for frame, _ in video_batch:
             from app.infraestructure.services.database import create_temporary_database
@@ -206,6 +212,29 @@ def process_frame(
                 if error == -1: break
                 errors = error
                 continue
+            
+            try:
+                info_logger.info("[ProcessRun] Detectando goles...")
+                goal_detections = goal_yolo.predict(frame)
+                info_logger.info(f"[ProcessRun] Detectados {len(goal_detections)} goles.")
+            except Exception as e:
+                error_logger.error(f"[Frame {frame_num}] Error en goal_yolo: {e}")
+                goal_detections = sv.Detections.empty()
+            
+            try:
+                info_logger.info("[ProcessRun] Actualizando goles...")
+                scored, scorer_id = goal_scorer.update(
+                    frame=frame,
+                    detections=goal_detections,
+                    match_id=match_id,
+                    frame_num=frame_num,
+                    db=db
+                )
+                info_logger.info("[ProcessRun] Goles actualizados.")
+                if scored and scorer_id is not None:
+                    info_logger.info(f"[ProcessRun] ¡GOL de jugador {scorer_id}!")
+            except Exception as e:
+                error_logger.error(f"[Frame {frame_num}] Error en goal_scorer: {e}")
 
             # -------------------------------------------------------
             # 7. EXTRAER IMÁGENES
