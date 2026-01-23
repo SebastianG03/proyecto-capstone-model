@@ -228,7 +228,6 @@ def process_frame(
             try:
                 info_logger.info("[ProcessRun] Actualizando goles...")
                 scored, scorer_id = goal_scorer.update(
-                    frame=frame,
                     detections=goal_detections,
                     match_id=match_id,
                     frame_num=frame_num,
