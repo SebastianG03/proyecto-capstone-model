@@ -1,6 +1,5 @@
 from typing import List, Type, override
 
-from polars import first
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
 from app.entities.models import Player, PlayerState
 
