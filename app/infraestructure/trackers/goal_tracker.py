@@ -24,7 +24,7 @@ class GoalTracker:
         device: "cuda:0", "cpu", "mps", ...
         """
         
-        self.model = YOLO(model_path)
+        self.model = YOLO(model_path, task="obb")
         self.model.fuse()
         self.conf_thres = conf_thres
         self.iou_thres = iou_thres
