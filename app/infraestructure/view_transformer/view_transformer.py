@@ -1,3 +1,4 @@
+import math
 import cv2
 import numpy as np
 from sqlalchemy.orm import Session
@@ -118,7 +119,7 @@ class ViewTransformer:
         lanza una excepción.
         """
         try:
-            bx, by = float(f'{ball_record.x}'), float(f'{ball_record.y}')
+            bx, by = self._validate_player_coordinates(f'{ball_record.x}', f'{ball_record.y}')
             debug_logger.debug(f"[ViewTransformer] Posición del balón para transformación: x={bx}, y={by}")
             if bx is None and by is None:
                 debug_logger.debug("[ViewTransformer] No hay posiciones para transformar.")
@@ -138,6 +139,33 @@ class ViewTransformer:
         except Exception as e:
             error_logger.error(f"[ViewTransformer] Error calculando posición transformada del balón: {e}")
             raise e
+        
+    def _validate_player_coordinates(self, x, y):
+        """Valida coordenadas de jugadores con protección extra contra valores corruptos"""
+        try:
+            # Convertir a float con manejo de valores extremos
+            px = float(x) if x is not None else None
+            py = float(y) if y is not None else None
+            
+            if px is None or py is None:
+                return None, None
+                
+            # Verificar si son infinitos o NaN
+            if (math.isinf(px) or math.isnan(px) or 
+                math.isinf(py) or math.isnan(py)):
+                error_logger.error(f"[ViewTransformer] Coordenadas inválidas detectadas: x={px}, y={py}")
+                return None, None
+                
+            max_reasonable_value = 1000000
+            if abs(px) > max_reasonable_value or abs(py) > max_reasonable_value:
+                error_logger.error(f"[ViewTransformer] Coordenadas corruptas (demasiado grandes): x={px}, y={py}")
+                return None, None
+                
+            return px, py
+            
+        except (ValueError, TypeError) as e:
+            error_logger.error(f"[ViewTransformer] Error al validar coordenadas de jugador: {e}")
+            return None, None
 
     def calculate_player_transformed_position(
         self,

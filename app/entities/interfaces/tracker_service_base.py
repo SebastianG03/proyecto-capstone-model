@@ -15,8 +15,6 @@ from app.entities.utils.singleton import AbstractSingleton
 from app.infraestructure.services.bbox_processor_service import get_center_of_bbox
 from sqlalchemy.orm import Session
 
-if TYPE_CHECKING:
-    from app.entities.collections import TrackCollectionBall, TrackCollectionPlayer
 
 
 class TrackerServiceBase(metaclass=AbstractSingleton):
@@ -31,12 +29,13 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         from app.infraestructure.trackers.tracker_factory import TrackerFactory
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.model = self.__load_detector__(model_path)
+        # self.model.fuse()
         self.tracker = sv.ByteTrack(
             frame_rate=25,
             lost_track_buffer=20,
             track_activation_threshold=0.5,
             minimum_matching_threshold=0.9,
-            minimum_consecutive_frames=1
+            minimum_consecutive_frames=3
         )
         self.tracker_factory = TrackerFactory(self.model)
         self.tracker_path = "bytetrack.yaml"
@@ -195,6 +194,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             raise e
 
     def add_to_ball(self, db: Session, track: BallEventModel, position: tuple[float, float]) -> None:
+        from app.entities.collections import TrackCollectionBall
         try:
             collection = TrackCollectionBall(db)
             collection.patch(
@@ -207,6 +207,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
     
     def add_to_player(self, db: Session, track: PlayerState, position: tuple[float, float]) -> None:
         try:
+            from app.entities.collections import TrackCollectionPlayer
             collection = TrackCollectionPlayer(db)
             collection.patch_state(
                 frame_index=int(f'{track.frame_index}'),

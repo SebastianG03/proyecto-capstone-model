@@ -1,18 +1,26 @@
 from pathlib import Path
 import boto3
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError, ReadTimeoutError
 
+from app.core.config import R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, VIDEO_BUCKET, VIDEOS_S3_ENDPOINT
 from app.entities.utils.singleton import Singleton
-from decouple import config
 
 class R2Downloader(metaclass=Singleton):
     def __init__(self,):
+        config = Config(
+            read_timeout=800,
+            connect_timeout=50,
+            retries={"max_attempts": 3, "mode": "adaptive"},
+        )
         self.s3 = boto3.client(
             "s3",
-            endpoint_url=config("VIDEOS_S3_ENDPOINT"),
-            aws_access_key_id=config("R2_ACCESS_KEY_ID"),
-            aws_secret_access_key=config("R2_SECRET_ACCESS_KEY"),
+            endpoint_url=VIDEOS_S3_ENDPOINT,
+            aws_access_key_id=R2_ACCESS_KEY_ID,
+            aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+            config=config,
         )
-        self.bucket = config("VIDEO_BUCKET")
+        self.bucket = VIDEO_BUCKET
 
     def build_destination_path(self, key: str, base_dir: str = "./tmp") -> Path:
         """
@@ -46,6 +54,11 @@ class R2Downloader(metaclass=Singleton):
                         break
                     f.write(chunk)
                     f.flush()
+        except (BotoCoreError, ClientError, ReadTimeoutError) as e:
+            print(f"Error descargando {key} desde R2: {e}")
+            Path(destination_path).unlink(missing_ok=True)
+            raise e
         except Exception as e:
             print(f"Error descargando {key} desde R2: {e}")
+            Path(destination_path).unlink(missing_ok=True)
             raise e

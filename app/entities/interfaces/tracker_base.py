@@ -1,4 +1,5 @@
 import supervision as sv
+from ultralytics.models import YOLO
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
 from sqlalchemy.orm import Session
 
@@ -10,8 +11,8 @@ class Tracker():
     - Deben implementar get_object_tracks que recibe detecciones ya trackeadas.
     """
 
-    def __init__(self, model):
-        self.model = model
+    def __init__(self, model: YOLO):
+        self.model: YOLO = model
     
     def _bbox_to_center(self, bbox: list) -> tuple[float, float]:
         print("[Tracker] Convirtiendo bbox a centro...")

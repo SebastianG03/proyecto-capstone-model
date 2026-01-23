@@ -5,6 +5,7 @@ from typing import Generator, List, Tuple, Optional
 import cv2
 from cv2.typing import MatLike
 
+from app.core.config import DEBUG
 from app.entities.models.PlayerModels import Player, PlayerState
 from app.entities.utils.global_values_store import GlobalValuesStore
 from app.logger.logger import debug_logger, info_logger, error_logger

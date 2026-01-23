@@ -113,12 +113,13 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
 
             empty_batches = 0
 
-            if time.time() - start_time > 6000: #MAX_PROCESSING_TIME * 4:
+            if time.time() - start_time > 1400: #MAX_PROCESSING_TIME * 4:
                 debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
                 break
 
             print(f"\n{'#'*60}\nProcesando batch de {len(batch)} frames...\n{'#'*60}\n")
             frame_num, updated_ids, updated_metrics = process_frame(
+                match_id=match_id,
                 video_batch=batch,
                 frame_num=frame_num,
                 db=db,
@@ -169,5 +170,3 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
         error_logger.error(f"Error processing video: {e}")
         error_logger.error(traceback.format_exc())
         raise e
-    finally:
-        download_path.unlink()

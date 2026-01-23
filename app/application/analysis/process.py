@@ -20,6 +20,7 @@ from app.utils.routes import OUTPUT_IMAGES_DIR
 from app.logger import *
 
 def process_frame(
+    match_id: int,
     frame_num: int,
     video_batch: List[tuple[MatLike, float]],
     db: Session,
@@ -43,6 +44,8 @@ def process_frame(
     errors = 0
     try:
         for frame, _ in video_batch:
+            from app.infraestructure.services.database import create_temporary_database
+            db = create_temporary_database(match_id)[0]
             actual_time = time.time()
             dt = actual_time - start_time
             globals.update(timestamp=dt)

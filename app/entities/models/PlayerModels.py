@@ -20,6 +20,7 @@ class Player(Base):
     team = Column(String, nullable=True, default=None)
     color = Column(String, nullable=True, default=None)
     shirt_number = Column(Integer, nullable=True, default=None)
+    goals = Column(Integer, default=0)
 
     # --- timestamps de auditoría --------------------------------------------
     created_at = Column(DATETIME(timezone=True),
@@ -39,6 +40,7 @@ class Player(Base):
             "team": self.team,
             "color": self.color,
             "shirt_number": self.shirt_number,
+            "goals": self.goals,
             "created_at": self.created_at,
             "updated_ut": self.updated_at,
         }
