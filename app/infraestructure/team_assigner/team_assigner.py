@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
@@ -55,7 +54,9 @@ class TeamAssigner(metaclass=Singleton):
     # ---------------------------
     # Helpers bbox / crop
     # ---------------------------
-    def _coords_from_bbox(self, frame: MatLike, bbox: List[int]) -> Optional[Tuple[int, int, int, int]]:
+    def _coords_from_bbox(
+        self, frame: MatLike, bbox: List[int]
+    ) -> Optional[Tuple[int, int, int, int]]:
         h, w = frame.shape[:2]
         x1 = max(0, int(bbox[0]))
         y1 = max(0, int(bbox[1]))
@@ -97,7 +98,9 @@ class TeamAssigner(metaclass=Singleton):
     # --------------------------------------------------
     #  extract_player_color  -> K-means RGB simple
     # --------------------------------------------------
-    def extract_player_color(self, frame: MatLike, bbox: List[int]) -> Optional[np.ndarray]:
+    def extract_player_color(
+        self, frame: MatLike, bbox: List[int]
+    ) -> Optional[np.ndarray]:
         """
         Devuelve el color dominante (BGR, float32) del torso del jugador.
         """
@@ -157,7 +160,9 @@ class TeamAssigner(metaclass=Singleton):
                 samples.append(c)
 
         if len(samples) < self.min_bootstrap_players:
-            logger.debug(f"Bootstrap: need >={self.min_bootstrap_players} valid players, got {len(samples)}")
+            logger.debug(
+                f"Bootstrap: need >={self.min_bootstrap_players} valid players, got {len(samples)}"
+            )
             return False
 
         try:
@@ -165,7 +170,10 @@ class TeamAssigner(metaclass=Singleton):
             mbk.fit(np.vstack(samples))
             self.kmeans = mbk
             centers = mbk.cluster_centers_
-            self.team_colors = {1: centers[0].astype(np.float32), 2: centers[1].astype(np.float32)}
+            self.team_colors = {
+                1: centers[0].astype(np.float32),
+                2: centers[1].astype(np.float32),
+            }
             logger.info("TeamAssigner: bootstrap complete, 2 team colors learned.")
             return True
         except Exception as e:
@@ -187,7 +195,7 @@ class TeamAssigner(metaclass=Singleton):
         centers = np.array(list(self.team_colors.values()), dtype=np.uint8)
         labs = np.array([self._to_lab(c) for c in centers])
         dif = labs - lab_c
-        dist = np.einsum('ij,ij->i', dif, dif)
+        dist = np.einsum("ij,ij->i", dif, dif)
         return int(np.argmin(dist)) + 1
 
     def _predict_from_color(self, color_bgr: np.ndarray) -> Optional[int]:
@@ -200,20 +208,26 @@ class TeamAssigner(metaclass=Singleton):
         except Exception as e:
             logger.error("KMeans predict error: %s", e, exc_info=True)
             return self._closest_team_from_color(color_bgr)
+
     # ---------------------------
     # API principal
     # ---------------------------
     def assign_team_colors(self, frame: MatLike, players: List[PlayerState]) -> None:
-        if self.kmeans is None or (len(players) % self.min_bootstrap_players == 0 and len(players) != self.last_kmeans_train_length):
+        if self.kmeans is None or (
+            len(players) % self.min_bootstrap_players == 0
+            and len(players) != self.last_kmeans_train_length
+        ):
             self.last_kmeans_train_length = len(players)
             self.bootstrap_colors(frame, players)
 
-    def get_player_team(self, frame: MatLike, record: PlayerState, frame_num: int, db: Session) -> int:
+    def get_player_team(
+        self, frame: MatLike, record: PlayerState, frame_num: int, db: Session
+    ) -> int:
         """
         Devuelve 1, 2 o -1. Utiliza smoothing temporal por jugador.
         """
         try:
-            player_id = int(f'{record.player_id}')
+            player_id = int(f"{record.player_id}")
             bbox = record.get_bbox()
 
             # cleanup cada 300 frames
@@ -233,7 +247,9 @@ class TeamAssigner(metaclass=Singleton):
 
             if self.kmeans is None:
                 player_record = TrackCollectionPlayer(db)
-                self.assign_team_colors(frame=frame, players=player_record.get_all_states())
+                self.assign_team_colors(
+                    frame=frame, players=player_record.get_all_states()
+                )
 
             color = self.extract_player_color(frame, bbox)
             if color is None:
@@ -247,25 +263,37 @@ class TeamAssigner(metaclass=Singleton):
 
             self.player_team_history[player_id].append(pred)
             hist = self.player_team_history[player_id]
-            team = self._majority_vote(hist) if len(hist) >= max(3, self.smoothing_window // 2) else pred
+            team = (
+                self._majority_vote(hist)
+                if len(hist) >= max(3, self.smoothing_window // 2)
+                else pred
+            )
             team = int(team)
             self.player_team_cache[player_id] = team
 
             # async db write
             player_record = TrackCollectionPlayer(db)
-            player_data = player_record.get_player(int(f'{record.player_id}'))
+            player_data = player_record.get_player(int(f"{record.player_id}"))
             if player_data:
-                _executor.submit(self._async_patch, player_record, player_data.id, team,
-                                 self.team_colors.get(team))
+                _executor.submit(
+                    self._async_patch,
+                    player_record,
+                    player_data.id,
+                    team,
+                    self.team_colors.get(team),
+                )
             return team
         except Exception as e:
             logger.error("Error predicting team: %s", e, exc_info=True)
             return -1
 
-
     def _async_patch(self, player_record, db_id, team, color):
         try:
-            color_str = json.dumps(color.tolist()) if color is not None and color.any() else None
+            color_str = (
+                json.dumps(color.tolist())
+                if color is not None and color.any()
+                else None
+            )
             player_record.patch(db_id, {"team": team, "color": color_str})
         except Exception as e:
             logger.error("Async patch failed: %s", e, exc_info=True)

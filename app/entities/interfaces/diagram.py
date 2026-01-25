@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict
 from sqlalchemy.orm import Session
-
 
 
 class Diagram(ABC):

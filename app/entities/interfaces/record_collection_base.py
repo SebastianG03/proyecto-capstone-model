@@ -1,6 +1,6 @@
 # record_collection_base.py
 from sqlalchemy.orm import Session
-from typing import Type, List, Optional
+from typing import Type, List
 
 from app.entities.utils.singleton import Singleton
 
@@ -10,6 +10,7 @@ class RecordCollectionBase(metaclass=Singleton):
     Clase base para manejar colecciones de registros en la DB.
     Puede ser heredada para diferentes modelos ORM.
     """
+
     orm_model: Type
 
     def __init__(self, db: Session):
@@ -23,11 +24,11 @@ class RecordCollectionBase(metaclass=Singleton):
         Se puede sobrescribir en la clase hija.
         """
         return obj.track_id
-    
+
     def get_last(self):
         return self.db.query(self.orm_model).order_by(self.orm_model.id.desc()).first()
 
-    #TODO Update to specific collection use
+    # TODO Update to specific collection use
     def get_record_for_frame(self, track_id: int, frame_index: int):
         """
         Busca un registro por track_id y frame_index.
@@ -57,7 +58,9 @@ class RecordCollectionBase(metaclass=Singleton):
 
     def post(self, obj_data: dict):
         try:
-            print(f"[RecordCollectionBase] Creando nuevo registro con datos: {obj_data}")
+            print(
+                f"[RecordCollectionBase] Creando nuevo registro con datos: {obj_data}"
+            )
             obj = self.orm_model(**obj_data)
             self.db.add(obj)
             print(f"[RecordCollectionBase] Objeto añadido a la sesión de la DB: {obj}")
@@ -70,7 +73,10 @@ class RecordCollectionBase(metaclass=Singleton):
             self.db.rollback()
             return None
         finally:
-            print(f'Elementos actuales en base de datos {self.orm_model.__name__}: ', len(self.get_all()))
+            print(
+                f"Elementos actuales en base de datos {self.orm_model.__name__}: ",
+                len(self.get_all()),
+            )
 
     def patch(self, obj_id: int, updates: dict):
         try:

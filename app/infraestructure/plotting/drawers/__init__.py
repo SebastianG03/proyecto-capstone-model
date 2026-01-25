@@ -1,2 +1,2 @@
-from .heatmap_drawer import HeatmapDrawer
-from .voronoi_diagram_drawer import VoronoiDiagramDrawer
+from .heatmap_drawer import HeatmapDrawer as HeatmapDrawer
+from .voronoi_diagram_drawer import VoronoiDiagramDrawer as VoronoiDiagramDrawer

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.utils.routes import ensure_directories
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("\033c", end="")
@@ -11,9 +12,11 @@ async def lifespan(app: FastAPI):
     yield
     print("🛑 API detenida")
 
+
 def run_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.include_router(analyze_router)
     return app
+
 
 app = run_app()

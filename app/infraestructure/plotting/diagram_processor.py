@@ -1,6 +1,6 @@
-
 from app.infraestructure.plotting.drawers import HeatmapDrawer
 from sqlalchemy.orm import Session
+
 
 def generate_diagrams(db: Session) -> None:
     try:

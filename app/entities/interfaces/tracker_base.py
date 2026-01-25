@@ -1,9 +1,10 @@
 import supervision as sv
 from ultralytics.models import YOLO
-from app.entities.interfaces.record_collection_base import RecordCollectionBase
 from sqlalchemy.orm import Session
+from app.logger import info_logger
 
-class Tracker():
+
+class Tracker:
     """
     Interfaz base para trackers específicos (players, ball, referees, etc).
     - NO deben ejecutar el detector.
@@ -13,24 +14,28 @@ class Tracker():
 
     def __init__(self, model: YOLO):
         self.model: YOLO = model
-    
+
     def _bbox_to_center(self, bbox: list) -> tuple[float, float]:
-        print("[Tracker] Convirtiendo bbox a centro...")
+        info_logger.info("[Tracker] Convirtiendo bbox a centro...")
         x1, y1, x2, y2 = bbox
-        print(f"[Tracker] Bbox recibida: {bbox}, coordenadas extraídas: x1={x1}, y1={y1}, x2={x2}, y2={y2}")
+        info_logger.info(
+            f"[Tracker] Bbox recibida: {bbox}, "
+            f"coordenadas extraídas: x1={x1}, y1={y1}, x2={x2}, y2={y2}"
+        )
         cx = float((x1 + x2) / 2.0)
-        print(f"[Tracker] cx={cx}")
+        info_logger.info(f"[Tracker] cx={cx}")
         cy = float((y1 + y2) / 2.0)
-        print(f"[Tracker] cy={cy}")
+        info_logger.info(f"[Tracker] cy={cy}")
         return cx, cy
 
     def get_object_tracks(
-            self,
-            detection_with_tracks: sv.Detections,
-            cls_names_inv: dict[str, int],
-            frame_num: int,
-            detection_supervision: sv.Detections,
-            db: Session) -> None:
+        self,
+        detection_with_tracks: sv.Detections,
+        cls_names_inv: dict[str, int],
+        frame_num: int,
+        detection_supervision: sv.Detections,
+        db: Session,
+    ) -> None:
         """
         Procesa detecciones *ya trackeadas* por el servicio:
         - detection_with_tracks: sv.Detections con atributos de tracking (id, etc.)
@@ -39,7 +44,7 @@ class Tracker():
         - detection_supervision: detecciones originales en formato supervision (sin tracks)
         - tracks_collection: repo/collection para persistir resultados
         """
-        print("Tracker.get_object_tracks called.")
+        info_logger.info("Tracker.get_object_tracks called.")
         raise NotImplementedError
 
     def reset(self) -> None:

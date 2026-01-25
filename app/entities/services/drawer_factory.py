@@ -1,7 +1,6 @@
 from typing import Dict, Type
 
-from app.entities.interfaces.diagram import \
-    Diagram
+from app.entities.interfaces.diagram import Diagram
 from sqlalchemy.orm import Session
 
 
@@ -11,10 +10,9 @@ class DrawerFactoryError(Exception):
 
 class DrawerFactory:
     @classmethod
-    def run_drawer(cls,
-                   drawer_type: Type[Diagram],
-                   positions: Dict,
-                   db: Session) -> None:
+    def run_drawer(
+        cls, drawer_type: Type[Diagram], positions: Dict, db: Session
+    ) -> None:
         """Runs a specific drawer based on the drawer type."""
 
         if drawer_type is None or not issubclass(drawer_type, Diagram):

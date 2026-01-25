@@ -10,6 +10,7 @@ from app.entities.models.PlayerModels import Player, PlayerState
 from app.entities.utils.global_values_store import GlobalValuesStore
 from app.logger.logger import debug_logger, info_logger, error_logger
 
+
 def _open_capture(video_path: str):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -17,7 +18,9 @@ def _open_capture(video_path: str):
     return cap
 
 
-def _read_batch(cap, batch_size: int, last_time: float) -> Tuple[List[Tuple[MatLike, float]], float]:
+def _read_batch(
+    cap, batch_size: int, last_time: float
+) -> Tuple[List[Tuple[MatLike, float]], float]:
     batch = []
     now = time.time()
     dt = now - last_time
@@ -29,7 +32,9 @@ def _read_batch(cap, batch_size: int, last_time: float) -> Tuple[List[Tuple[MatL
     return batch, now
 
 
-def read_video(video_path: str, batch_size: int = 16) -> Generator[List[Tuple[MatLike, float]], None, None]:
+def read_video(
+    video_path: str, batch_size: int = 16
+) -> Generator[List[Tuple[MatLike, float]], None, None]:
     info_logger.info(f"Abriendo video: {video_path}")
     cap = _open_capture(video_path)
     frame_rate = cap.get(cv2.CAP_PROP_FPS)
@@ -55,10 +60,14 @@ def read_video(video_path: str, batch_size: int = 16) -> Generator[List[Tuple[Ma
                 break
     except FileNotFoundError as e:
         error_logger.error(str(e))
-        raise RuntimeError("No se pudo abrir el video especificado. Verifica la ruta y los permisos.")
-    except Exception as e:
+        raise RuntimeError(
+            "No se pudo abrir el video especificado. Verifica la ruta y los permisos."
+        )
+    except Exception:
         error_logger.exception("Error inesperado al leer el video")
-        raise RuntimeError("Ocurrió un error procesando el video. Revisa los logs para más detalles.")
+        raise RuntimeError(
+            "Ocurrió un error procesando el video. Revisa los logs para más detalles."
+        )
     finally:
         cap.release()
 
@@ -76,8 +85,22 @@ def _validate_and_normalize_bbox(bbox, w, h):
     return x1, y1, x2, y2
 
 
-def _save_player_crop(folder: pathlib.Path, crop, player_id: int, player_team, player_color, count, frame_index: int):
-    filename = folder / f"player_{player_id}_team_{player_team}_color_{player_color}_img_{count+1}_frame_{frame_index}.png"
+def _save_player_crop(
+    folder: pathlib.Path,
+    crop,
+    player_id: int,
+    player_team,
+    player_color,
+    count,
+    frame_index: int,
+):
+    filename = (
+        folder
+        / (
+            f"player_{player_id}_team_{player_team}_color_{player_color}_"
+            f"img_{count + 1}_frame_{frame_index}.png"
+        )
+    )
     cv2.imwrite(str(filename), crop)
     return filename
 
@@ -96,7 +119,7 @@ def extract_player_images(
     try:
         if not DEBUG:
             return player_image_counts, last_frame_taken, None
-        
+
         if frame_index % 10 != 0:
             return player_image_counts, last_frame_taken, None
         debug_logger.debug(f"Extrayendo imagen de jugador en frame {frame_index}")
@@ -142,7 +165,9 @@ def extract_player_images(
 
         player_team = player_record.get("team", "unknown")
         player_color = player_record.get("color", "unknown")
-        filename = _save_player_crop(folder, crop, player_id, player_team, player_color, count, frame_index)
+        filename = _save_player_crop(
+            folder, crop, player_id, player_team, player_color, count, frame_index
+        )
 
         player_image_counts[player_id] = count + 1
         last_frame_taken[player_id] = frame_index
@@ -151,5 +176,7 @@ def extract_player_images(
         return player_image_counts, last_frame_taken, player_id
     except Exception:
         error_logger.exception("Error al extraer la imagen del jugador")
-        raise RuntimeError("No se pudo extraer la imagen del jugador. Por favor revisa el video y los parámetros de entrada.")
-
+        raise RuntimeError(
+            "No se pudo extraer la imagen del jugador. "
+            "Por favor revisa el video y los parámetros de entrada."
+        )

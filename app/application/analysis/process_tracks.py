@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.infraestructure.trackers.tracker_service import TrackerService
 from app.entities.utils.tools_context import analysis_context
 
+
 def process_tracks_and_position(
     frame: MatLike,
     frame_num: int,
@@ -39,7 +40,7 @@ def process_tracks_and_position(
                 camera_movement_per_frame=camera_movement,
                 pixels_to_meters=pixels_to_meters,
                 scale=scale,
-                track=last_track
+                track=last_track,
             )
             print("Posiciones ajustadas.")
 

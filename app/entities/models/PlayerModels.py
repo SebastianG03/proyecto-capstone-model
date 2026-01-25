@@ -1,16 +1,17 @@
-from datetime import datetime,timezone
-from sqlalchemy import (Boolean, Column, Integer, Float,
-                        String, ForeignKey, Index)
+from datetime import datetime, timezone
+from sqlalchemy import Boolean, Column, Integer, Float, String, ForeignKey
 from sqlalchemy.dialects.sqlite import DATETIME
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.infraestructure.services.database import Base
 import json
 
+
 class Player(Base):
     """
     Información INMUTABLE (o que cambia muy poco) del jugador.
     """
+
     __tablename__ = "players"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -23,16 +24,17 @@ class Player(Base):
     goals = Column(Integer, default=0)
 
     # --- timestamps de auditoría --------------------------------------------
-    created_at = Column(DATETIME(timezone=True),
-                        server_default=func.now())
-    updated_at = Column(DATETIME(timezone=True),
-                    nullable=False,
-                    default=datetime.now(timezone.utc),
-                    onupdate=datetime.now(timezone.utc))
+    created_at = Column(DATETIME(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DATETIME(timezone=True),
+        nullable=False,
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+    )
 
     # relación 1-N con sus estados
     states = relationship("PlayerState", back_populates="player")
-    
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -50,6 +52,7 @@ class PlayerState(Base):
     """
     Estado del jugador FRAME-A-FRAME.
     """
+
     __tablename__ = "player_states"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -57,16 +60,16 @@ class PlayerState(Base):
     # --- FK al jugador -------------------------------------------------------
     player_id = Column(
         Integer,
-        ForeignKey(
-            "players.player_id",
-            ondelete="CASCADE"),
-        nullable=False, index=True)
+        ForeignKey("players.player_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     # --- índice del frame ----------------------------------------------------
     frame_index = Column(Integer, index=True, nullable=False)
 
     # --- bounding box crudo (detector) ---------------------------------------
-    bbox = Column(String, nullable=True)          # JSON list
+    bbox = Column(String, nullable=True)  # JSON list
 
     # --- posición ------------------------------------------------------------
     x = Column(Float)
@@ -89,9 +92,9 @@ class PlayerState(Base):
     ball_owner_id = Column(Integer, index=True, nullable=True)
 
     # --- dinámica ------------------------------------------------------------
-    distance = Column(Float, default=0.0) # on meters
+    distance = Column(Float, default=0.0)  # on meters
     incremental_distance = Column(Float, default=0.0)
-    speed = Column(Float, default=0.0) # on km per hour
+    speed = Column(Float, default=0.0)  # on km per hour
     acceleration = Column(Float, default=0.0)
     is_sprint = Column(Boolean, default=False)
 
@@ -102,12 +105,10 @@ class PlayerState(Base):
     timestamp_ms = Column(Float, index=True, nullable=True)
 
     # --- timestamp de inserción ----------------------------------------------
-    created_at = Column(DATETIME(timezone=True),
-                        default=datetime.now(timezone.utc))
+    created_at = Column(DATETIME(timezone=True), default=datetime.now(timezone.utc))
 
     # --- relación inversa ----------------------------------------------------
     player = relationship("Player", back_populates="states")
-
 
     def set_bbox(self, bbox_list: list[int]):
         self.bbox = json.dumps(bbox_list)
@@ -116,7 +117,7 @@ class PlayerState(Base):
         if self.bbox is None:
             return None
         try:
-            return json.loads(f'{self.bbox}')
+            return json.loads(f"{self.bbox}")
         except Exception:
             return None
 
@@ -148,5 +149,3 @@ class PlayerState(Base):
             "timestamp_ms": self.timestamp_ms,
             "created_at": self.created_at.isoformat(),
         }
-
-

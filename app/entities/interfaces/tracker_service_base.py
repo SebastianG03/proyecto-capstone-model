@@ -1,5 +1,5 @@
 import logging
-from typing import List, Union, TYPE_CHECKING
+from typing import List, Tuple, Union
 
 import supervision as sv
 from cv2.typing import MatLike
@@ -9,12 +9,12 @@ from ultralytics.models import YOLO
 
 from app.core.config import MODEL_USE_HALF_PRECISION
 from app.entities.interfaces.tracker_base import Tracker
-from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
+from app.entities.trackers import ball_tracker
+from app.entities.trackers.player_tracker import PlayerTracker
 from app.entities.utils.singleton import AbstractSingleton
 from app.infraestructure.services.bbox_processor_service import get_center_of_bbox
 from sqlalchemy.orm import Session
-
 
 
 class TrackerServiceBase(metaclass=AbstractSingleton):
@@ -22,45 +22,42 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
     Servicio base para detección + tracking.
     - Carga detector (YOLO)
     - Mantiene un ByteTrack interno (self.tracker) para continuidad entre frames
-    - Provee métodos streaming: process_frame (1 frame) y get_object_tracks (compatibilidad con listas)
+    - Provee métodos streaming: process_frame (1 frame) y get_object_tracks
     """
 
-    def __init__(self, model_path: str):
+    def __init__(self, ball_model_path: str, player_model_path: str):
         from app.infraestructure.trackers.tracker_factory import TrackerFactory
-        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.model = self.__load_detector__(model_path)
-        # self.model.fuse()
+
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.ball_model = self.__load_detector__(ball_model_path)
+        self.player_model = self.__load_detector__(player_model_path)
+
         self.tracker = sv.ByteTrack(
             frame_rate=25,
             lost_track_buffer=20,
             track_activation_threshold=0.5,
             minimum_matching_threshold=0.9,
-            minimum_consecutive_frames=1
+            minimum_consecutive_frames=1,
         )
-        self.tracker_factory = TrackerFactory(self.model)
+        self.tracker_factory = TrackerFactory(
+            ball_model=self.ball_model,
+            player_model=self.player_model
+            )
         self.tracker_path = "bytetrack.yaml"
         logging.info(f"TrackerServiceBase initialized on device={self._device}")
 
     def __load_detector__(self, model_path: str) -> YOLO:
         try:
-            model = YOLO(model_path, task='obb', verbose=False)
-
-            dummy = torch.zeros((1, 3, 640, 640), device=self._device)
-            model(dummy, verbose=False)
+            model = YOLO(model_path, task="obb", verbose=False)
+            
+            if model_path.endswith(".pt"):
+                model.fuse()
 
             if MODEL_USE_HALF_PRECISION:
                 try:
                     model.half()
                 except Exception as e:
                     logging.warning(f"Could not enable half precision: {e}")
-
-            backbone = model.model
-            if isinstance(backbone, torch.nn.Module):
-                mode = "reduce-overhead" if self._device == "cuda" else "max-autotune"
-                model.model = torch.compile(backbone, mode=mode)
-                logging.info(f"torch.compile aplicado ({mode}) en {self._device}")
-            else:
-                logging.warning("No se encontró el grafo nn.Module; torch.compile omitido.")
 
             return model
         except Exception as e:
@@ -73,8 +70,10 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
 
     def __exit__(self, exc_type, exc_value, traceback):
         try:
-            if hasattr(self, "model"):
-                del self.model
+            if hasattr(self, "ball_model"):
+                del self.ball_model
+            if hasattr(self, "player_model"):
+                del self.player_model
             if hasattr(self, "tracker"):
                 del self.tracker
 
@@ -96,19 +95,21 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         self.tracker = sv.ByteTrack()
         logging.info("ByteTrack reset.")
 
-    def detect_frames(self, frames: Union[List[MatLike], MatLike], conf: float = 0.1) -> list:
+    def detect_frames(
+        self, frames: Union[List[MatLike], MatLike], conf: float = 0.1
+    ) -> Tuple[List[sv.Detections], List[sv.Detections]]:
         """
-        Wrapper sobre el detector. Acepta un frame o lista de frames y devuelve lista de Results.
-        Nota: el modelo YOLO puede aceptar listas y devolver lista de Results.
+        Detecta en una lista de frames o un solo frame.
+        Retorna una tupla con dos listas de supervisions.Detections, correspondientes
+        a las detecciones del modelo de pelota y del modelo de jugador, respectivamente.
         """
+
         print("Detectando en frames...")
-        return self.model.predict(
-            frames,
-            conf=conf,
-            iou=0.9,
-            agnostic_nms=False,
-            max_det=1000,
-            nms=False)
+        return self.ball_model(
+            frames, conf=conf, iou=0.9, agnostic_nms=False, max_det=1000, nms=False
+        ), self.player_model(
+            frames, conf=conf, iou=0.9, agnostic_nms=False, max_det=1000, nms=False
+        )
 
     def process_frame(
         self,
@@ -127,54 +128,68 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         try:
             # 1) Detectar (modelo retorna lista de Results aunque pasemos single frame)
             print("Detectando en frame...")
-            results = self.detect_frames([frame], conf=conf)
+            ball_results, player_results = self.detect_frames([frame], conf=conf)
             print("Detección finalizada.")
-            if not results:
+            if not ball_results and not player_results:
                 print("No se obtuvieron resultados de detección.")
                 return
 
             # results[0] es la detección del frame
             print("Procesando resultados de detección...")
-            result = results[0]
+            player_result = player_results[0]
+            ball_result = ball_results[0]
 
             # 2) map de clases
             print("Mapeando clases...")
-            cls_names = getattr(result, "names", {})
-            cls_names_inv = {v: k for k, v in cls_names.items()}
+            player_cls_names = getattr(player_result, "names", {})
+            ball_cls_names = getattr(ball_result, "names", {})
+
+            player_cls_names_inv = {v: k for k, v in player_cls_names.items()}
+            ball_cls_names_inv = {v: k for k, v in ball_cls_names.items()}
+            
+            cls_names_inv = {**player_cls_names_inv, **ball_cls_names_inv}
 
             # 3) convertir a supervision
-            det_sv = sv.Detections.from_ultralytics(result)
+            player_detection = sv.Detections.from_ultralytics(player_result)
+            ball_detection = sv.Detections.from_ultralytics(ball_result)
 
             # 4) tracking (ByteTrack) — devuelve detections con track_id
             print("Actualizando ByteTrack...")
-            tracked = self.tracker.update_with_detections(det_sv)
+            player_tracked = self.tracker.update_with_detections(player_detection)
+            ball_tracked = self.tracker.update_with_detections(ball_detection)
 
             for tracker in self.get_trackers():
                 try:
                     print(f"Ejecutando tracker {tracker}...")
                     if not tracker:
                         break
-                    
+
                     if not isinstance(tracker, Tracker):
-                        print(f"Tracker {tracker} no es instancia de Tracker. Se omite.")
+                        print(
+                            f"Tracker {tracker} no es instancia de Tracker. Se omite."
+                        )
                         continue
-                    
+                    is_player_tracker = isinstance(tracker, PlayerTracker)
                     tracker.get_object_tracks(
-                        detection_with_tracks=tracked,
+                        detection_with_tracks=player_tracked if is_player_tracker else ball_tracked,
                         cls_names_inv=cls_names_inv,
                         frame_num=frame_num,
-                        detection_supervision=det_sv,
-                        db=db
+                        detection_supervision=player_detection if is_player_tracker else ball_detection,
+                        db=db,
                     )
                 except Exception as e:
                     logging.exception(f"Error executing tracker {tracker}: {e}")
         except Exception as e:
             logging.exception(f"Error processing frame {frame_num}: {e}")
-            
+
     def get_trackers(self) -> List:
         return list(self.tracker_factory.get_trackers().values())
 
-    def add_position_to_track(self, db: Session, track: PlayerState | BallEventModel) -> None:
+    def add_position_to_track(
+        self, db: Session, track
+    ) -> None:
+        from app.entities.models.BallState import BallEventModel
+        
         try:
             bbox = track.get_bbox()
             print("Bbox del track ", track.id, ": ", bbox)
@@ -182,7 +197,9 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             if bbox is None or len(bbox) == 0:
                 return
 
-            print(f"Adding position to track {track.id} with bbox {bbox} de tipo {type(track)}")
+            print(
+                f"Adding position to track {track.id} with bbox {bbox} de tipo {type(track)}"
+            )
             position = get_center_of_bbox(bbox)
             if isinstance(track, Player):
                 self.add_to_player(db, track, position)
@@ -193,26 +210,31 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             print(f"Error adding position to track {track}: {e}")
             raise e
 
-    def add_to_ball(self, db: Session, track: BallEventModel, position: tuple[float, float]) -> None:
+    def add_to_ball(
+        self, db: Session, track, position: tuple[float, float]
+    ) -> None:
         from app.entities.collections import TrackCollectionBall
+
         try:
             collection = TrackCollectionBall(db)
-            collection.patch(
-                int(f'{track.id}'),
-                {'x': position[0], 'y': position[1]})
+            collection.patch(int(f"{track.id}"), {"x": position[0], "y": position[1]})
         except Exception as e:
             logging.exception(f"Error adding to player {track}: {e}")
             print(f"Error adding to player {track}: {e}")
             raise e
-    
-    def add_to_player(self, db: Session, track: PlayerState, position: tuple[float, float]) -> None:
+
+    def add_to_player(
+        self, db: Session, track: PlayerState, position: tuple[float, float]
+    ) -> None:
         try:
             from app.entities.collections import TrackCollectionPlayer
+
             collection = TrackCollectionPlayer(db)
             collection.patch_state(
-                frame_index=int(f'{track.frame_index}'),
-                player_id=int(f'{track.player_id}'),
-                updates={'x': position[0], 'y': position[1]})
+                frame_index=int(f"{track.frame_index}"),
+                player_id=int(f"{track.player_id}"),
+                updates={"x": position[0], "y": position[1]},
+            )
         except Exception as e:
             logging.exception(f"Error adding to player {track}: {e}")
             print(f"Error adding to player {track}: {e}")

@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from cv2.typing import MatLike
 
-from app.entities.models import PlayerState, BallEventModel
+from app.entities.models.PlayerModels import PlayerState
 from app.entities.utils import Singleton
 from app.logger import debug_logger, error_logger
 from sqlalchemy.orm import Session
@@ -28,11 +28,7 @@ class CameraMovementEstimator(metaclass=Singleton):
         self.lk_params = dict(
             winSize=(15, 15),
             maxLevel=2,
-            criteria=(
-                cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
-                10,
-                0.03
-            )
+            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
         )
 
         # Estado interno
@@ -47,13 +43,12 @@ class CameraMovementEstimator(metaclass=Singleton):
             qualityLevel=0.3,
             minDistance=3,
             blockSize=7,
-            mask=mask_features
+            mask=mask_features,
         )
 
         self.old_features = cv2.goodFeaturesToTrack(
             self.old_gray,
-            **self.features_params, # type: ignore
-            
+            **self.features_params,  # type: ignore
         )
 
         # Último movimiento estimado → smoothing
@@ -77,7 +72,8 @@ class CameraMovementEstimator(metaclass=Singleton):
 
         if self.old_features is None or len(self.old_features) == 0:
             self.old_features = cv2.goodFeaturesToTrack(
-                frame_gray, **self.features_params # type: ignore
+                frame_gray,
+                **self.features_params,  # type: ignore
             )
 
             self.old_gray = frame_gray
@@ -87,16 +83,19 @@ class CameraMovementEstimator(metaclass=Singleton):
             self.old_gray,
             frame_gray,
             self.old_features,
-            None, # type: ignore
-            **self.lk_params # type: ignore
+            None,  # type: ignore
+            **self.lk_params,  # type: ignore
         )
 
-        dx, dy, dist, scale = self.update_camera_distance(new_features, self.old_features)
+        dx, dy, dist, scale = self.update_camera_distance(
+            new_features, self.old_features
+        )
 
         # Threshold para considerar movimiento real
         if dist > self.minimum_distance:
             self.old_features = cv2.goodFeaturesToTrack(
-                frame_gray, **self.features_params # type: ignore
+                frame_gray,
+                **self.features_params,  # type: ignore
             )
 
         # Smoothing (EMA)
@@ -137,38 +136,48 @@ class CameraMovementEstimator(metaclass=Singleton):
         camera_movement_per_frame,
         scale: float,
         pixels_to_meters: float,
-        track: PlayerState | BallEventModel,
-        db: Session
+        track,
+        db: Session,
     ):
         """
         Ajusta la posición del jugador/ balón compensando movimiento de cámara.
         """
+        from app.entities.models.BallState import BallEventModel
+        
+        
         try:
             tracks_collection = None
-            print(f"Ajustando posición del track {track.id} con movimiento de cámara {camera_movement_per_frame}.")
+            print(
+                f"Ajustando posición del track {track.id} "
+                f"con movimiento de cámara {camera_movement_per_frame}."
+            )
             dx, dy = camera_movement_per_frame
-            debug_logger.debug(f"[CameraMovementEstimator] Movimiento de cámara por frame: dx={dx}, dy={dy}")
+            debug_logger.debug(
+                f"[CameraMovementEstimator] Movimiento de cámara por frame: dx={dx}, dy={dy}"
+            )
 
             if dx is None or dy is None:
                 print("Movimiento de cámara no definido, no se aplica ajuste.")
                 return
 
-            #Conversion
+            # Conversion
             # dx *= pixels_to_meters
             # dy *= pixels_to_meters
-            # debug_logger.debug(f"[CameraMovementEstimator] Movimiento de cámara convertido a metros: dx={dx}, dy={dy}")
-            debug_logger.debug(f"[CameraMovementEstimator] Movimiento de cámara: dx={dx}, dy={dy}")
+            debug_logger.debug(
+                f"[CameraMovementEstimator] Movimiento de cámara: dx={dx}, dy={dy}"
+            )
             x, y = track.x, track.y
 
             if x is None or y is None:
                 print("Posición del track no definida, no se aplica ajuste.")
                 return
 
-            #Conversion
-            debug_logger.debug(f"[CameraMovementEstimator] Posición actual: x={x}, y={y}")
+            # Conversion
+            debug_logger.debug(
+                f"[CameraMovementEstimator] Posición actual: x={x}, y={y}"
+            )
             # x *= pixels_to_meters
             # y *= pixels_to_meters
-            # debug_logger.debug(f"[CameraMovementEstimator] Posición del track convertida a metros: x={x}, y={y}")
 
             adjusted_x = (x - dx) / scale
             adjusted_y = (y - dy) / scale
@@ -177,30 +186,32 @@ class CameraMovementEstimator(metaclass=Singleton):
             if position_adjusted[0] is None or position_adjusted[1] is None:
                 debug_logger.debug("Posición ajustada inválida, no se aplica ajuste.")
                 return
-            debug_logger.debug(f"Posición ajustada: x={position_adjusted[0]}, y={position_adjusted[1]}")
+            debug_logger.debug(
+                f"Posición ajustada: x={position_adjusted[0]}, y={position_adjusted[1]}"
+            )
 
-            updates = {
-                "x": position_adjusted[0],
-                "y": position_adjusted[1]
-            }
+            updates = {"x": position_adjusted[0], "y": position_adjusted[1]}
             debug_logger.debug(f"Actualizaciones a aplicar: {updates}")
 
             debug_logger.debug(f"Actualizando track ID {track.id} en la base de datos.")
             if isinstance(track, PlayerState):
                 from app.entities.collections import TrackCollectionPlayer
-                debug_logger.debug("Usando TrackCollectionPlayer para actualizar el track.")
+
+                debug_logger.debug(
+                    "Usando TrackCollectionPlayer para actualizar el track."
+                )
                 tracks_collection = TrackCollectionPlayer(db)
                 tracks_collection.patch_state(
-                    int(f'{track.player_id}'),
-                    int(f'{track.frame_index}'),
-                    updates)
+                    int(f"{track.player_id}"), int(f"{track.frame_index}"), updates
+                )
             elif isinstance(track, BallEventModel):
                 from app.entities.collections import TrackCollectionBall
-                debug_logger.debug("Usando TrackCollectionBall para actualizar el track.")
+
+                debug_logger.debug(
+                    "Usando TrackCollectionBall para actualizar el track."
+                )
                 tracks_collection = TrackCollectionBall(db)
-                tracks_collection.patch(
-                    int(f'{track.id}'),
-                    updates)
+                tracks_collection.patch(int(f"{track.id}"), updates)
             if not tracks_collection:
                 error_logger.error("tracks_collection no pudo ser determinado.")
                 raise ValueError("tracks_collection no pudo ser determinado.")
@@ -220,38 +231,19 @@ class CameraMovementEstimator(metaclass=Singleton):
 
         if len(new_features) != len(old_features) or len(new_features) == 0:
             return 0.0, 0.0, 0.0, 1.0
-        
+
         deltas = new_features - old_features
-        dx =  float(np.median(deltas[:, 0, 0]))
-        dy =  float(np.median(deltas[:, 0, 1]))
-        
+        dx = float(np.median(deltas[:, 0, 0]))
+        dy = float(np.median(deltas[:, 0, 1]))
+
         src = old_features.reshape(-1, 2).astype(np.float32)
         dst = new_features.reshape(-1, 2).astype(np.float32)
-        
+
         M, _ = cv2.estimateAffinePartial2D(
-            src,
-            dst,
-            method=cv2.RANSAC,
-            ransacReprojThreshold=3)
-        
-        scale = np.sqrt(M[0,0]**2 + M[1,0]**2) if M is not None else 1.0
+            src, dst, method=cv2.RANSAC, ransacReprojThreshold=3
+        )
+
+        scale = np.sqrt(M[0, 0] ** 2 + M[1, 0] ** 2) if M is not None else 1.0
         distance = np.sqrt(dx**2 + dy**2)
 
         return dx, dy, distance, scale
-        # max_distance = 0.0
-        # camera_movement_x = 0.0
-        # camera_movement_y = 0.0
-
-        # for new_feat, old_feat in zip(new_features, old_features):
-        #     new_point = new_feat.ravel()
-        #     old_point = old_feat.ravel()
-
-        #     diff = new_point - old_point
-        #     distance = np.linalg.norm(diff)
-
-        #     if distance > max_distance:
-        #         max_distance = distance
-        #         camera_movement_x = float(diff[0])
-        #         camera_movement_y = float(diff[1])
-
-        # return camera_movement_x, camera_movement_y, float(max_distance)

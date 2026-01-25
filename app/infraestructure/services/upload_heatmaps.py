@@ -1,18 +1,14 @@
-from datetime import datetime
-from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List
-from app.entities.models import PlayerState
 from app.infraestructure.services.upload_service import upload_file
 from app.utils.routes import OUTPUT_VIDEOS_DIR
 from sqlalchemy.orm import Session
 from app.logger import debug_logger
 from app.core.config import DEBUG
 
+
 def upload_heatmaps_for_extracted_players(
     db: Session, match_id: int, extracted_player_ids: set
 ) -> dict[int, str]:
-
     """
     Sube los heatmaps de los jugadores extraídos a AWS S3.
 
@@ -32,7 +28,6 @@ def upload_heatmaps_for_extracted_players(
     print(f"Archivos encontrados en players: {[f.name for f in files_in_folder]}")
 
     try:
-
         if not files_in_folder:
             print("No se encontraron archivos de heatmaps en la carpeta de players.")
             return {}
@@ -53,7 +48,7 @@ def upload_heatmaps_for_extracted_players(
             jobs.append({
                 "player_id": player_id,
                 "filename": home_file.name,
-                "file_bytes": file_bytes
+                "file_bytes": file_bytes,
             })
 
         if not jobs:
@@ -63,7 +58,13 @@ def upload_heatmaps_for_extracted_players(
         uploaded_keys: dict = {}
         with ThreadPoolExecutor(max_workers=8) as exe:
             futures = [
-                exe.submit(upload_file, match_id, j["player_id"], j["filename"], j["file_bytes"])
+                exe.submit(
+                    upload_file,
+                    match_id,
+                    j["player_id"],
+                    j["filename"],
+                    j["file_bytes"],
+                )
                 for j in jobs
             ]
             for fut in as_completed(futures):

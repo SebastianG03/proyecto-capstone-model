@@ -1,1 +1,1 @@
-from .analysis_tools import AnalysisTools
+from .analysis_tools import AnalysisTools as AnalysisTools

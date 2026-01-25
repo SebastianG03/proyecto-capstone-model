@@ -1,1 +1,1 @@
-from .player_ball_assigner import PlayerBallAssigner
+from .player_ball_assigner import PlayerBallAssigner as PlayerBallAssigner

@@ -1,23 +1,16 @@
 from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from fastapi import Depends
 
 from app.utils.routes import DATABASE_DIR
 
 DATABASE_URL = "sqlite:///:memory:"
 
 engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    pool_pre_ping=True
+    DATABASE_URL, connect_args={"check_same_thread": False}, pool_pre_ping=True
 )
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
@@ -30,9 +23,14 @@ def create_database():
     """
     Base.metadata.create_all(bind=engine)
 
+
 def create_temporary_database(match_id: int):
     db_path = DATABASE_DIR / f"temp_db_{match_id}.sqlite"
-    engine = create_engine(f"sqlite:///{db_path.as_posix()}", echo=False, connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{db_path.as_posix()}",
+        echo=False,
+        connect_args={"check_same_thread": False},
+    )
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()

@@ -2,6 +2,7 @@ from typing import Optional
 
 from app.entities.utils.singleton import Singleton
 
+
 class GlobalValuesStore(metaclass=Singleton):
     """
     Almacena y permite actualizar dos valores: timestamp (float) y fps (float).
@@ -10,7 +11,7 @@ class GlobalValuesStore(metaclass=Singleton):
     def __init__(self, timestamp: float = 0.0, fps: float = 0.0) -> None:
         """
         Inicializa la clase GlobalValuesStore.
-        
+
         Args:
             timestamp (float): Valor del timestamp a inicializar (por defecto 0.0).
             fps (float): Valor de los fps a inicializar (por defecto 0.0).
@@ -19,7 +20,7 @@ class GlobalValuesStore(metaclass=Singleton):
         self._fps: float = float(fps)
         self.MAX_HUMAN_SPEED_KMH = 25.0
         self.MAX_ACCEL_MS2 = 6.0
-        self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24 #fps
+        self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24  # fps
         self.MIN_DT_S = 1.0 / (2 * 24)
 
     # --- Getters ---
@@ -65,7 +66,9 @@ class GlobalValuesStore(metaclass=Singleton):
         self._fps = float(value)
 
     # --- Actualización simultánea ---
-    def update(self, timestamp: Optional[float] = None, fps: Optional[float] = None) -> None:
+    def update(
+        self, timestamp: Optional[float] = None, fps: Optional[float] = None
+    ) -> None:
         """
         Permite actualizar timestamp y/o fps en una sola llamada.
         Si alguno de los argumentos es None, se mantiene el valor actual.
@@ -79,6 +82,9 @@ class GlobalValuesStore(metaclass=Singleton):
 
     # --- Representación legible ---
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(timestamp={self._timestamp}, fps={self._fps})"
+        return (
+            f"{self.__class__.__name__}(timestamp={self._timestamp}, fps={self._fps})"
+        )
+
 
 globals = GlobalValuesStore()

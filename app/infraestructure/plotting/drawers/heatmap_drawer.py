@@ -1,5 +1,4 @@
-from pathlib import Path
-from typing import Dict, List, Optional, Set, override
+from typing import List, override
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,7 +10,7 @@ from app.entities.interfaces import Diagram
 from app.entities.models import PlayerState
 from app.utils.routes import OUTPUT_VIDEOS_DIR
 
-RAW_W, RAW_H = 1280, 720          # píxeles de la fuente
+RAW_W, RAW_H = 1280, 720  # píxeles de la fuente
 PITCH_X, PITCH_Y = [0, 120], [0, 80]  # unidades StatsBomb
 
 
@@ -73,25 +72,30 @@ class HeatmapDrawer(Diagram):
         """
         # 1. leemos por timestamp_ms  ‹‹‹ CAMBIO
         states: List[PlayerState] = (
-            self.db.query(PlayerState)
+            self.db
+            .query(PlayerState)
             .filter(PlayerState.player_id == player_id)
-            .order_by(PlayerState.timestamp_ms)   # ← antes frame_index
+            .order_by(PlayerState.timestamp_ms)  # ← antes frame_index
             .all()
         )
         if not states:
             return pd.DataFrame(columns=["x", "y", "team"])
 
-        player = (
-            self.db.query(Player)
-            .filter(Player.player_id == player_id)
-            .first()
-        )
-        team = player.team if player and f'{player.team}' else "None"
+        player = self.db.query(Player).filter(Player.player_id == player_id).first()
+        team = player.team if player and f"{player.team}" else "None"
 
         rows = []
         for st in states:
-            xx = float(f'{st.x_transformed}') if st.x_transformed is not None else float(f'{st.x}')
-            yy = float(f'{st.y_transformed}') if st.y_transformed is not None else float(f'{st.y}')
+            xx = (
+                float(f"{st.x_transformed}")
+                if st.x_transformed is not None
+                else float(f"{st.x}")
+            )
+            yy = (
+                float(f"{st.y_transformed}")
+                if st.y_transformed is not None
+                else float(f"{st.y}")
+            )
             if pd.isna(xx) or pd.isna(yy):
                 continue
             rows.append({"x": float(xx), "y": float(yy), "team": team})
@@ -130,8 +134,8 @@ class HeatmapDrawer(Diagram):
         print("Generando heatmaps (solo BD)…")
         # Todos los player_id que existan en la tabla Player
         player_ids = [
-            int(p[0]) for p in
-            self.db.query(Player.player_id).distinct().all()
+            int(p[0])
+            for p in self.db.query(Player.player_id).distinct().all()
             if p[0] is not None
         ]
         print(f"{len(player_ids)} jugadores encontrados en tabla Player.")
@@ -150,10 +154,13 @@ class HeatmapDrawer(Diagram):
                 self._draw_single_heatmap(pid, str(team), team_df)
 
     def _draw_single_heatmap(self, pid: int, team: str, df: pd.DataFrame):
-        print(f"  jugador {pid}  n={len(df)}  "
-              f"x∈[{df.x.min():.1f}, {df.x.max():.1f}]  "
-              f"y∈[{df.y.min():.1f}, {df.y.max():.1f}]" if not df.empty else
-              f"  jugador {pid}  SIN DATOS – heatmap vacío")
+        print(
+            f"  jugador {pid}  n={len(df)}  "
+            f"x∈[{df.x.min():.1f}, {df.x.max():.1f}]  "
+            f"y∈[{df.y.min():.1f}, {df.y.max():.1f}]"
+            if not df.empty
+            else f"  jugador {pid}  SIN DATOS – heatmap vacío"
+        )
 
         fig, ax, pitch = self._draw_pitch()
 
@@ -162,16 +169,28 @@ class HeatmapDrawer(Diagram):
             print("  ↳ DataFrame vacío – campo limpio")
         elif df.x.nunique() == 1 and df.y.nunique() == 1:
             # Punto único
-            ax.scatter(df.x.iloc[0], df.y.iloc[0],
-                       s=600, c='red', edgecolors='white', linewidths=2, zorder=5)
+            ax.scatter(
+                df.x.iloc[0],
+                df.y.iloc[0],
+                s=600,
+                c="red",
+                edgecolors="white",
+                linewidths=2,
+                zorder=5,
+            )
             print("  ↳ punto único dibujado")
         else:
             # KDE normal
             bw = max(0.5, 4 / np.sqrt(len(df)))
             pitch.kdeplot(
-                df.x, df.y, ax=ax,
-                cmap="viridis", fill=True, alpha=0.6, levels=30,
-                bw_adjust=bw
+                df.x,
+                df.y,
+                ax=ax,
+                cmap="viridis",
+                fill=True,
+                alpha=0.6,
+                levels=30,
+                bw_adjust=bw,
             )
 
         out_file = self.players_path / f"heatmap_player_{pid}_team_{team}.png"

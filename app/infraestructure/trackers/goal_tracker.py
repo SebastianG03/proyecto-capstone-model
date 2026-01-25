@@ -5,8 +5,7 @@ import numpy as np
 import supervision as sv
 import torch
 from ultralytics.models import YOLO
-
-logger = logging.getLogger(__name__)
+from app.logger import info_logger
 
 
 class GoalTracker:
@@ -15,37 +14,38 @@ class GoalTracker:
     detectar 'soccer-ball' y 'soccer-goal'.
     """
 
-    def __init__(self,
-                 model_path: str | Path,
-                 conf_thres: float = 0.25,
-                 iou_thres: float = 0.45):
+    def __init__(
+        self, model_path: str | Path, conf_thres: float = 0.25, iou_thres: float = 0.45
+    ):
         """
         model_path: ruta al .pt (p.ej. yolov8n-goal-ball.pt)
         device: "cuda:0", "cpu", "mps", ...
         """
-        
+
         self.model = YOLO(model_path, task="obb")
         self.model.fuse()
         self.conf_thres = conf_thres
         self.iou_thres = iou_thres
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # --- supervision helpers ---
         self.box_annotator = sv.BoxAnnotator()
         self.label_annotator = sv.LabelAnnotator(text_scale=0.5)
 
-        logger.info(f"GoalYOLODetector ready: {model_path} on {self.device}")
+        info_logger.info(f"GoalYOLODetector ready: {model_path} on {self.device}")
 
     def predict(self, frame: np.ndarray) -> sv.Detections:
         """
         Devuelte sv.Detections con las clases que nos interesan
         ya filtradas por confianza.
         """
-        results = self.model(frame,
-                             conf=self.conf_thres,
-                             iou=self.iou_thres,
-                             device=self.device,
-                             verbose=False)
+        results = self.model(
+            frame,
+            conf=self.conf_thres,
+            iou=self.iou_thres,
+            device=self.device,
+            verbose=False,
+        )
         if not results or len(results) == 0:
             return sv.Detections.empty()
 
@@ -62,6 +62,10 @@ class GoalTracker:
             f"{name} {conf:.2f}"
             for name, conf in zip(detections.data["class_name"], detections.confidence)
         ]
-        annotated = self.box_annotator.annotate(scene=frame.copy(), detections=detections)
-        annotated = self.label_annotator.annotate(scene=annotated, detections=detections, labels=labels)
+        annotated = self.box_annotator.annotate(
+            scene=frame.copy(), detections=detections
+        )
+        annotated = self.label_annotator.annotate(
+            scene=annotated, detections=detections, labels=labels
+        )
         return annotated
