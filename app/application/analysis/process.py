@@ -174,12 +174,18 @@ def process_frame(
 
                     if player_number is not None:
                         info_logger.info(f"[ProcessRun] Paso 7: Reconociendo número de jugador: {player_number}")
-                        tools.player_records.patch(
-                            int(f'{last_state.id}'),
-                            {
-                                "shirt_number": player_number
-                            }
-                        )
+                        # CORRECCIÓN: Usar player_id para buscar en tabla Player, no el id de PlayerState
+                        player_db_id = tools.player_records.get_player_id(int(f'{last_state.player_id}'))
+                        if player_db_id and player_db_id != -1:
+                            tools.player_records.patch(
+                                player_db_id,
+                                {
+                                    "shirt_number": player_number
+                                }
+                            )
+                            info_logger.info(f"[ProcessRun] Número de jugador actualizado exitosamente: {player_number}")
+                        else:
+                            error_logger.error(f"[Frame {frame_num}] No se encontró Player con player_id {last_state.player_id}")
                 else:
                     info_logger.info("[ProcessRun] No hay último jugador para reconocer número.")
             except Exception as e:
