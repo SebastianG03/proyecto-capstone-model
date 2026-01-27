@@ -81,8 +81,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
                 del self.ball_model
             if hasattr(self, "player_model"):
                 del self.player_model
-            if hasattr(self, "tracker"):
-                del self.tracker
+            
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -114,9 +113,9 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
 
         print("Detectando en frames...")
         return self.ball_model(
-            frames, conf=0.25, iou=0.8, agnostic_nms=False, max_det=100, nms=True
+            frames, conf=0.25, iou=0.8, agnostic_nms=False, max_det=20, nms=True
         ), self.player_model(
-            frames, conf=0.4, iou=0.6, agnostic_nms=False, max_det=50, nms=True
+            frames, conf=0.4, iou=0.6, agnostic_nms=False, max_det=20, nms=True
         )
 
     def process_frame(

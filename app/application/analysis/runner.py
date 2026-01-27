@@ -119,10 +119,11 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
 
             empty_batches = 0
 
-            if time.time() - start_time > MAX_PROCESSING_TIME / 2:
+            if time.time() - start_time > 500:
                 debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
                 break
-
+            
+            
             print(
                 f"\n{'#' * 60}\nProcesando batch de {len(batch)} frames...\n{'#' * 60}\n"
             )

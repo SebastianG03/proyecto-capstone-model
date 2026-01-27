@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from app.entities.models.PlayerModels import Player
 from app.entities.interfaces import Diagram
 from app.entities.models import PlayerState
+from app.entities.utils.tools_context import AnalysisContext
 from app.utils.routes import OUTPUT_VIDEOS_DIR
+from app.logger import debug_logger
 
 RAW_W, RAW_H = 1280, 720  # píxeles de la fuente
 PITCH_X, PITCH_Y = [0, 120], [0, 80]  # unidades StatsBomb
@@ -34,8 +36,8 @@ class HeatmapDrawer(Diagram):
 
     def __init__(self, db: Session):
         super().__init__(db)
+        self.tools = AnalysisContext().tools
         base = OUTPUT_VIDEOS_DIR
-        self.save_path = base
         self.players_path = base / "players"
         for p in [base, self.players_path]:
             p.mkdir(parents=True, exist_ok=True)
@@ -197,3 +199,8 @@ class HeatmapDrawer(Diagram):
         fig.savefig(out_file, dpi=300, bbox_inches="tight")
         plt.close(fig)
         print(f"  --> guardado {out_file}")
+        payload = {"player_id": pid, "path": out_file.as_posix()}
+        debug_logger.debug(f"[HeatmapDrawer] Enviando payload: {payload}")
+        self.tools.heatmap_points.post(payload)
+        return out_file
+

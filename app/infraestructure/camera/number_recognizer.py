@@ -1,4 +1,5 @@
 from __future__ import annotations
+import uuid
 import cv2
 import torch
 import numpy as np
@@ -6,6 +7,8 @@ from PIL import Image
 from typing import Optional, Sequence, Tuple, List
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 from peft import PeftModel
+
+from app.utils.routes import OUTPUT_IMAGES_DIR
 from .trocr_buffer import TROCRBuffer
 from app.logger import debug_logger
 
@@ -42,7 +45,12 @@ class PlayerNumberDetector:
         )
         if y_bottom <= y_top or x_right <= x_left:
             return np.empty((0, 0), dtype=np.uint8)
-        return frame[y_top:y_bottom, x_left:x_right]
+        
+        crop = frame[y_top:y_bottom, x_left:x_right]
+        filename = (
+        OUTPUT_IMAGES_DIR / f"crop-{uuid.uuid4()}.png")
+        cv2.imwrite(str(filename), crop)
+        return crop
 
     def _preprocess(self, roi: np.ndarray) -> np.ndarray:
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
