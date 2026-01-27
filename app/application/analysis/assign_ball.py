@@ -31,7 +31,7 @@ def assign_ball_to_player(
             ball_bbox = ball_track.get_bbox()
             print(
                 f"Bbox del balón: {ball_bbox}, "
-                "numero de elementos en bbox: {len(ball_bbox) if ball_bbox else 'N/A'}"
+                f"numero de elementos en bbox: {len(ball_bbox) if ball_bbox else 'N/A'}"
             )
             print("Bbox data type: ", type(ball_bbox))
             if ball_bbox is None:

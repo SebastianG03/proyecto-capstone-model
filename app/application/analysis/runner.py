@@ -4,7 +4,7 @@ import time
 import tracemalloc
 from typing import List
 
-from app.core.config import MAX_EMPTY_BATCHES
+from app.core.config import MAX_EMPTY_BATCHES, MAX_PROCESSING_TIME
 from app.infraestructure.plotting import generate_diagrams
 
 from app.infraestructure.trackers import TrackerService
@@ -119,7 +119,7 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
 
             empty_batches = 0
 
-            if time.time() - start_time > 1550:  # MAX_PROCESSING_TIME * 4:
+            if time.time() - start_time > MAX_PROCESSING_TIME / 2:
                 debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
                 break
 

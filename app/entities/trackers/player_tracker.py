@@ -49,6 +49,7 @@ class PlayerTracker(Tracker):
         xyxy = getattr(detection_with_tracks, "xyxy", None)
         class_ids = getattr(detection_with_tracks, "class_id", None)
         tracker_ids = getattr(detection_with_tracks, "tracker_id", None)
+        info_logger.info(f"[PlayerTracker] xyxy: {xyxy}, class_ids: {class_ids}, tracker_ids: {tracker_ids}")
         if xyxy is None or class_ids is None or tracker_ids is None:
             info_logger.info(
                 f"[PlayerTracker] xyxy, class_ids o tracker_ids faltantes frame {frame_num}"
@@ -63,6 +64,7 @@ class PlayerTracker(Tracker):
             xyxy_arr, class_ids_arr, tracker_ids_arr = xyxy, class_ids, tracker_ids
 
         player_class_idx = cls_names_inv.get("player")
+        info_logger.info(f"[PlayerTracker] player_class_idx: {player_class_idx}")
         if player_class_idx is None:
             info_logger.info(
                 f"[PlayerTracker] No hay clase 'player' en frame {frame_num}"
@@ -70,6 +72,7 @@ class PlayerTracker(Tracker):
             return
 
         mask = class_ids_arr == player_class_idx
+        info_logger.info(f"[PlayerTracker] mask: {mask}")
 
         player_bboxes = xyxy_arr[mask]
         player_ids = tracker_ids_arr[mask]

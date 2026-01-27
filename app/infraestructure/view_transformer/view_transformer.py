@@ -89,9 +89,12 @@ class ViewTransformer:
         player_collection = TrackCollectionPlayer(db)
 
         info_logger.info("[ViewTransformer] Transformando posiciones en registros...")
+        ball_register = ball_collection.get_last()
+        player_register = player_collection.get_last()
+        info_logger.info(f"[ViewTransformer] ball_register: {ball_register.to_dict() if ball_register is not None else None}")
+        info_logger.info(f"[ViewTransformer] player_register: {player_register.to_dict() if player_register is not None else None}")
+
         try:
-            ball_register = ball_collection.get_last()
-            player_register = player_collection.get_last()
             info_logger.info(
                 f"[ViewTransformer] Registro de balon extraido: {ball_register is not None}"
             )
@@ -120,6 +123,7 @@ class ViewTransformer:
             error_logger.error(
                 f"[ViewTransformer] Error transformando posiciones en records: {e}"
             )
+            error_logger.error(f"[ViewTransformer] Detalles: extraidos ball register: ${ball_register.to_dict() if ball_register is not None else None}, player register: ${player_register.to_dict() if player_register is not None else None}")
             raise e
 
     def calculate_ball_transformed_position(
@@ -190,12 +194,8 @@ class ViewTransformer:
                 )
                 return None, None
 
-            max_reasonable_value = 99999999999
-            if abs(px) > max_reasonable_value or abs(py) > max_reasonable_value:
-                error_logger.error(
-                    f"[ViewTransformer] Coordenadas corruptas (demasiado grandes): x={px}, y={py}"
-                )
-                return None, None
+            # if px < 0 or py < 0 or px > image_width or py > image_height:
+            #     return
 
             return px, py
 
