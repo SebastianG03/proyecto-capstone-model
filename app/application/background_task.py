@@ -1,15 +1,17 @@
+from datetime import datetime, timezone
 import json
 import httpx
-from datetime import datetime
-from datetime import timezone
+from sqlalchemy import create_engine, event
+from sqlalchemy.pool import QueuePool
+from sqlalchemy.orm import sessionmaker
 
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
-from app.infraestructure.services.database import create_temporary_database
+from app.infraestructure.services.database import Base, create_temporary_database
 from sqlalchemy.orm import Session
 
 from app.application.post_process.proccess_final_data import analyze_match
-from app.utils.routes import OUTPUT_REPORTS_DIR
+from app.utils.routes import BASE_RES_DIR, OUTPUT_REPORTS_DIR
 from app.logger import error_logger, debug_logger, info_logger
 from app.core.config import DEBUG, STATS_NOTIFY_URL
 import traceback
@@ -19,11 +21,44 @@ async def process_video_async(video_name: str, match_id: int, color: str):
     """
     Ejecuta el análisis en segundo plano con una BD en memoria aislada.
     """
-    info_logger.info(
-        f"Iniciando análisis en background para video: {video_name}, match_id: {match_id}"
+    print(f"Iniciando análisis en background para video: {video_name}, match_id: {match_id}")
+    db_path = BASE_RES_DIR / "database" / f"temp_db_{match_id}.sqlite"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Configuración mejorada de SQLite para evitar bloqueos
+    engine = create_engine(
+        f"sqlite:///{db_path.as_posix()}", 
+        echo=False, 
+        connect_args={
+            "check_same_thread": False,
+            "timeout": 30  # Timeout de 30 segundos
+        },
+        poolclass=QueuePool,
+        pool_size=5,
+        max_overflow=10,
+        pool_recycle=3600,
+        pool_pre_ping=True
     )
-    info_logger.info("Color enviado al análisis: " + color)
-    db, engine, db_path = create_temporary_database(match_id)
+    
+    # Configurar pragmas de SQLite
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):
+        """Configura pragmas de SQLite para mejor rendimiento y recuperación de bloqueos"""
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA cache_size=10000")
+        cursor.close()
+    
+    Base.metadata.create_all(bind=engine)
+    SessionLocal = sessionmaker(
+        autocommit=False, 
+        autoflush=False, 
+        bind=engine,
+        expire_on_commit=False
+    )
+    db = SessionLocal()
 
     try:
         info_logger.info(f"Ejecutando análisis en background para video: {video_name}")
@@ -49,7 +84,7 @@ async def process_run(db: Session, video_name: str, match_id: int, color: str):
         info_logger.info("Analisis iniciado...")
         heatmaps = run_analysis(db=db, video_name=video_name, match_id=match_id)
         _ = await export_data(
-            db, match_id, start_time=start, heatmaps=heatmaps or {}, color=color
+            db, match_id, start_time=start, color=color
         )
     except Exception as e:
         error_logger.error(f"[BACKGROUND_TASK] Error al analizar el video, error: {e}")
@@ -63,7 +98,6 @@ async def export_data(
     start_time: datetime,
     color: str,
     max_records: int = 100000,
-    heatmaps: dict[int, str] = {},
 ):
     try:
         player_records = (
@@ -88,7 +122,6 @@ async def export_data(
 
         player_stats = analyze_match(
             ball_events=ball_records,
-            heatmaps=heatmaps,
             match_id=match_id,
             player_states=player_records,
             players=players,

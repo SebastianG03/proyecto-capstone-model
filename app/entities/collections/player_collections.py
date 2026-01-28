@@ -95,6 +95,8 @@ class TrackCollectionPlayer(RecordCollectionBase):
             print(f"Objeto encontrado: {obj}")
             for key, value in updates.items():
                 setattr(obj, key, value)
+            # Flush antes de commit para detectar errores
+            self.db.flush()
             self.db.commit()
             self.db.refresh(obj)
             print(f"Objeto actualizado: {obj}")
@@ -115,6 +117,8 @@ class TrackCollectionPlayer(RecordCollectionBase):
             obj = PlayerState(**obj_data)
             self.db.add(obj)
             print(f"Objeto añadido a la sesión de la DB: {obj}")
+            # Flush antes de commit para detectar errores
+            self.db.flush()
             self.db.commit()
             self.db.refresh(obj)
             print(f"Objeto refrescado: {obj}")
@@ -138,6 +142,8 @@ class TrackCollectionPlayer(RecordCollectionBase):
             obj = Player(**obj_data)
             self.db.add(obj)
             print(f"[TrackCollectionPlayer] Objeto añadido a la sesión de la DB: {obj}")
+            # Flush antes de commit para detectar errores de integridad
+            self.db.flush()
             self.db.commit()
             self.db.refresh(obj)
             print(f"[TrackCollectionPlayer] Objeto refrescado: {obj}")
@@ -173,6 +179,8 @@ class TrackCollectionPlayer(RecordCollectionBase):
                 if hasattr(obj, key):
                     setattr(obj, key, val)
 
+            # Flush antes de commit para detectar errores de transacción
+            self.db.flush()
             self.db.commit()
             print(f"[TrackCollectionPlayer] Objeto actualizado: {obj}")
             self.db.refresh(obj)

@@ -155,7 +155,6 @@ def process_frame(
                 try:
                     info_logger.info("[ProcessRun] Paso 5: Asignando balón a jugador...")
                     players = tools.player_records.get_all_states()[:15]
-                    # Se genera memory leak al iterar todos los elementos, modificar pora limitar el numero de elementos enviados
                     ball_frames = tools.ball_records.get_all()[:15]
                     if ball_frames:
                         assign_ball_to_player(
@@ -211,94 +210,72 @@ def process_frame(
                     errors = error
                     continue
 
-                try:
-                    last_state = tools.player_records.get_last()
-                    if last_state is not None and last_state.get_bbox() is not None:
-                        player_id = int(f"{last_state.player_id}")
-                        crop = tools.number_recognizer._crop_dorsal_region(
-                            frame, last_state.get_bbox()
+            try:
+                info_logger.info("[ProcessRun] Iniciando el reconocimiento del numero del jugador")
+                last_state = tools.player_records.get_last()
+                info_logger.info("[ProcessRun] Ultimo estado del jugador obtenido")
+                if last_state is not None and last_state.get_bbox() is not None:
+                    player_id = int(f"{last_state.player_id}")
+                    crop = tools.number_recognizer._crop_dorsal_region(
+                        frame, last_state.get_bbox() # type: ignore
+                    )
+                    if crop.size == 0:
+                        info_logger.info(
+                            "[ProcessRun] Crop del dorsal vacío, omitiendo reconocimiento."
                         )
-                        if crop.size == 0:
-                            info_logger.info(
-                                "[ProcessRun] Crop del dorsal vacío, omitiendo reconocimiento."
-                            )
-                        else:
-                            proc = tools.number_recognizer._preprocess(crop)
-                            info_logger.info(
-                                "[ProcessRun] Reconociendo número de jugador..."
-                            )
-
-                            def update_best_num(num: Optional[int], conf: float):
-                                if num is not None and conf > 0.5:
-                                    debug_logger.debug(
-                                        f"[ProcessRun] Número {num} con confianza "
-                                        f"{conf:.4f} añadido al jugador {player_id}."
-                                    )
-                                    numbers_data[player_id][num] += conf
-
-                            must_flush = tools.trocr_buffer.push(proc, update_best_num)
-                            if must_flush:
-                                info_logger.info("[ProcessRun] Flushing buffer...")
-                                tools.number_recognizer.flush_buffer(tools.trocr_buffer)
-
-                        # decisión inmediata (con lo que haya hasta ahora)
-                        player_numbers = numbers_data.get(player_id, {})
-                        if player_numbers:
-                            best_num = max(player_numbers, key=player_numbers.get) # type: ignore
-                            info_logger.info(
-                                f"[ProcessRun] Número de jugador reconocido: {best_num}"
-                            )
-                        else:
-                            best_num = None
-                            info_logger.info(
-                                "[ProcessRun] No se reconoció ningún número para el jugador."
-                            )
-                        numbers_data = {k: dict(v) for k, v in numbers_data.items()}
-                        debug_logger.debug(
-                            "[ProcessRun] Datos completos de números:"
-                            f"{numbers_data}"
+                    else:
+                        proc = tools.number_recognizer._preprocess(crop)
+                        info_logger.info(
+                            "[ProcessRun] Reconociendo número de jugador..."
                         )
 
-                        player = tools.player_records.get_player(player_id)
-                        if best_num is not None and player is not None:
+                        def update_best_num(num: Optional[int], conf: float):
+                            if num is not None and conf > 0.35:
+                                debug_logger.debug(
+                                    f"[ProcessRun] Número {num} con confianza "
+                                    f"{conf:.4f} añadido al jugador {player_id}."
+                                )
+                                numbers_data[player_id][num] += conf
+                        
+                        if proc is None:
                             info_logger.info(
-                                f"[ProcessRun] Actualizando número de jugador {best_num}..."
+                                "[ProcessRun] Imagen preprocesada vacía, omitiendo reconocimiento."
                             )
-                            id = int(f"{player.id}")
-                            tools.player_records.patch(id, {"shirt_number": best_num})
-                except Exception as e:
-                    error_logger.error(
-                        f"[Frame {frame_num}] Error reconociendo número de jugador: {e}"
-                    )
-                    error = update_error(errors)
-                    if error == -1:
-                        break
-                    errors = error
-                    continue
+                            continue
 
-                try:
-                    info_logger.info("[ProcessRun] Detectando goles...")
-                    goal_detections = goal_yolo.predict(frame)
-                    info_logger.info(
-                        f"[ProcessRun] Detectados {len(goal_detections)} instancias de arcos."
-                    )
-                except Exception as e:
-                    error_logger.error(f"[Frame {frame_num}] Error en goal_yolo: {e}")
-                    goal_detections = sv.Detections.empty()
+                        must_flush = tools.trocr_buffer.push(proc, update_best_num)
+                        if must_flush:
+                            info_logger.info("[ProcessRun] Flushing buffer...")
+                            tools.number_recognizer.flush_buffer(tools.trocr_buffer)
+                    
+                    player_numbers = numbers_data.get(player_id, {})
+                    if not player_numbers:
+                        info_logger.info(
+                            f"[ProcessRun] No se encontraron números para reconocer al jugador {player_id}."
+                        )
+                        continue
 
-                try:
-                    info_logger.info("[ProcessRun] Actualizando goles...")
-                    scored, scorer_id = goal_scorer.update(
-                        detections=goal_detections,
-                        match_id=match_id,
-                        frame_num=frame_num,
-                        db=db,
-                    )
-                    info_logger.info("[ProcessRun] Goles actualizados.")
-                    if scored and scorer_id is not None:
-                        info_logger.info(f"[ProcessRun] ¡GOL de jugador {scorer_id}!")
-                except Exception as e:
-                    error_logger.error(f"[Frame {frame_num}] Error en goal_scorer: {e}")
+                    player_number = max(player_numbers, key=player_numbers.get) # type: ignore
+                    if player_number is not None:
+                        info_logger.info(
+                            f"[ProcessRun] Número de jugador reconocido: {player_number}"
+                        )
+                        info_logger.info(f"[ProcessRun] Paso 7: Reconociendo número de jugador: {player_number}")
+                        player_db_id = tools.player_records.get_player_id(int(f'{last_state.player_id}'))
+                        if player_db_id and player_db_id != -1:
+                            tools.player_records.patch(
+                                player_db_id,
+                                {
+                                    "shirt_number": player_number
+                                }
+                            )
+                            info_logger.info(f"[ProcessRun] Número de jugador actualizado exitosamente: {player_number}")
+                        else:
+                            error_logger.error(f"[Frame {frame_num}] No se encontró Player con player_id {last_state.player_id}")
+                else:
+                    info_logger.info("[ProcessRun] No hay último jugador para reconocer número.")
+            except Exception as e:
+                error_logger.error(f"[Frame {frame_num}] Error reconociendo número de jugador: {e}")
 
                 # -------------------------------------------------------
                 # 7. EXTRAER IMÁGENES
@@ -336,8 +313,8 @@ def process_frame(
                         "[ProcessRun] Objetos devueltos por extract_player_images: "
                         f"counts={updated_counts}, last_frame_taken={updated_last}, saved_id={saved_id}"
                     )
-                    player_image_counts.update(updated_counts)
-                    last_frame_taken.update(updated_last)
+                    player_image_counts.update(updated_counts)  # type: ignore
+                    last_frame_taken.update(updated_last)  # type: ignore
                     if saved_id is not None:
                         saved_player_ids.append(saved_id)
 

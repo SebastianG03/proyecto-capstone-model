@@ -1,17 +1,50 @@
-from typing import Generator
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from contextlib import contextmanager
+from typing import Generator
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from sqlalchemy.pool import QueuePool
+from fastapi import Depends
 
 from app.utils.routes import DATABASE_DIR
 
 DATABASE_URL = "sqlite:///:memory:"
 
+# Configuración mejorada para SQLite
 engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}, pool_pre_ping=True
+    DATABASE_URL,
+    connect_args={
+        "check_same_thread": False,
+        "timeout": 30  # Timeout de 30 segundos para operaciones
+    },
+    pool_pre_ping=True,
+    # Usar QueuePool para mejor manejo de conexiones
+    poolclass=QueuePool,
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=3600  # Reciclar conexiones cada hora
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Eventos para mejorar el rendimiento de SQLite
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_conn, connection_record):
+    """Configura pragmas de SQLite para mejor rendimiento y recuperación de bloqueos"""
+    cursor = dbapi_conn.cursor()
+    # WAL mode para mejor concurrencia
+    cursor.execute("PRAGMA journal_mode=WAL")
+    # Timeout más agresivo para evitar deadlocks
+    cursor.execute("PRAGMA busy_timeout=30000")
+    # Sincronización normal (no FULL para mejor velocidad)
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    # Tamaño de caché más grande
+    cursor.execute("PRAGMA cache_size=10000")
+    cursor.close()
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False  # Evitar recargas innecesarias
+)
 
 Base = declarative_base()
 

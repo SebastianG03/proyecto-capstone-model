@@ -1,13 +1,17 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import List
+
+from app.entities.utils.tools_context import AnalysisContext
 from app.infraestructure.services.upload_service import upload_file
 from app.utils.routes import OUTPUT_VIDEOS_DIR
 from sqlalchemy.orm import Session
-from app.logger import debug_logger
+from app.logger import debug_logger, info_logger
 from app.core.config import DEBUG
 
 
 def upload_heatmaps_for_extracted_players(
-    db: Session, match_id: int, extracted_player_ids: set
+    db: Session, match_id: int
 ) -> dict[int, str]:
     """
     Sube los heatmaps de los jugadores extraídos a AWS S3.
@@ -22,37 +26,32 @@ def upload_heatmaps_for_extracted_players(
     claves como valores correspondientes a los nombres de los archivos subidos en
     AWS S3.
     """
-    base_path = OUTPUT_VIDEOS_DIR
-    players_path = base_path / "players"
-    files_in_folder = list(players_path.glob("heatmap_player_*.png"))
+    heatmaps = AnalysisContext().tools.heatmap_points.get_all()
+    files_in_folder: List[Path] = [Path(f'{map.path}') for map in heatmaps if Path(f'{map.path}').is_file()] 
     print(f"Archivos encontrados en players: {[f.name for f in files_in_folder]}")
 
     try:
         if not files_in_folder:
-            print("No se encontraron archivos de heatmaps en la carpeta de players.")
+            info_logger.info("[Upload Heatmaps] No se encontraron archivos de heatmaps en la carpeta de players.")
             return {}
 
         jobs = []
         for file in files_in_folder:
-            home_file = players_path / file.name
-            if not home_file.exists() or home_file.stat().st_size == 0:
-                print(f"Archivo inválido o vacío: {file.name}")
+            if not file.exists() or file.stat().st_size == 0:
+                info_logger.info(f"[Upload Heatmaps] Archivo inválido o vacío: {file.name}")
                 continue
 
-            file_bytes = home_file.read_bytes()
+            file_bytes = file.read_bytes()
             player_id = file.stem.split("_")[2]
-
-            if int(player_id) not in extracted_player_ids:
-                continue
 
             jobs.append({
                 "player_id": player_id,
-                "filename": home_file.name,
+                "filename": file.name,
                 "file_bytes": file_bytes,
             })
 
         if not jobs:
-            print("Nada que subir.")
+            info_logger.info("[Upload Heatmaps] Nada que subir.")
             return {}
 
         uploaded_keys: dict = {}
@@ -72,6 +71,11 @@ def upload_heatmaps_for_extracted_players(
                     key = fut.result()
                     if key:
                         debug_logger.debug(f"[UPLOAD HEATMAP] Heatmap subido: {key}")
+                        heatmap = AnalysisContext().tools.heatmap_points.get_by_player_id(int(key["player_id"]))
+                        AnalysisContext().tools.heatmap_points.patch(
+                            int(f'{heatmap.id}'),
+                            {"path": key["key"]})
+                        debug_logger.debug(f"[UPLOAD HEATMAP] Heatmap actualizado: {key}")
                         uploaded_keys[key["player_id"]] = key["key"]
                 except Exception as exc:
                     print(f"Error subiendo heatmap: {exc}")

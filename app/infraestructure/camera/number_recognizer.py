@@ -10,16 +10,16 @@ from peft import PeftModel
 
 from app.utils.routes import OUTPUT_IMAGES_DIR
 from .trocr_buffer import TROCRBuffer
-from app.logger import debug_logger
+from app.logger import debug_logger, error_logger
 
 
 class PlayerNumberDetector:
     MIN_CONF = 0.60
-    IMG_SIZE = (60, 60)
+    IMG_SIZE = (96, 96)
 
-    VERT_FRAC_TOP = 0.25
-    VERT_FRAC_BOT = 0.55
-    HORZ_MARGIN = 0.20
+    VERT_FRAC_TOP = 0.10
+    VERT_FRAC_BOT = 0.65
+    HORZ_MARGIN = 0.15
 
     def __init__(self, model_dir: str):
         base = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-base-printed") # nosec
@@ -32,9 +32,14 @@ class PlayerNumberDetector:
     def _crop_dorsal_region(self, frame: np.ndarray, bbox: Sequence[int]) -> np.ndarray:
         x1, y1, x2, y2 = bbox
         h, w = frame.shape[:2]
+    
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(w - 1, x2), min(h - 1, y2)
         box_h, box_w = y2 - y1, x2 - x1
+
+        if box_h <= 0 or box_w <= 0:
+            return np.empty((0, 0, 3), dtype=np.uint8)
+        
         y_top, y_bottom = (
             int(y1 + box_h * self.VERT_FRAC_TOP),
             int(y1 + box_h * self.VERT_FRAC_BOT),
@@ -43,27 +48,53 @@ class PlayerNumberDetector:
             int(x1 + box_w * self.HORZ_MARGIN),
             int(x2 - box_w * self.HORZ_MARGIN),
         )
+        
         if y_bottom <= y_top or x_right <= x_left:
             return np.empty((0, 0), dtype=np.uint8)
-        
+
         crop = frame[y_top:y_bottom, x_left:x_right]
+
+        if crop.size == 0 or crop.shape[0] == 0 or crop.shape[1] == 0:
+            return np.empty((0, 0, 3), dtype=np.uint8)
+
         filename = (
         OUTPUT_IMAGES_DIR / f"crop-{uuid.uuid4()}.png")
         cv2.imwrite(str(filename), crop)
         return crop
 
-    def _preprocess(self, roi: np.ndarray) -> np.ndarray:
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    def _preprocess(self, roi: np.ndarray) -> Optional[np.ndarray]:
+        if roi is None or roi.size == 0 or len(roi.shape) < 2:
+            return None
+
+        if len(roi.shape) == 2:
+            roi = cv2.cvtColor(roi, cv2.COLOR_GRAY2BGR)
+
+        try:
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        except cv2.error:
+            error_logger.error("[Number Recognizer] Error al convertir la imagen a escala de grises")
+            return None
+
         bin = cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
         )
         clean = cv2.morphologyEx(bin, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+
         x, y, w, h = cv2.boundingRect(clean)
+        
+        if w == 0 or h == 0:
+            return None
+        
         crop = clean[y:y + h, x:x + w]
         side = max(h, w)
+
+        if side == 0:
+            return None
+
         square = np.full((side, side), 255, dtype=np.uint8)
         off_y, off_x = (side - h) // 2, (side - w) // 2
         square[off_y: off_y + h, off_x: off_x + w] = crop
+
         return cv2.resize(square, self.IMG_SIZE)
 
     def predict_batch(
@@ -87,6 +118,13 @@ class PlayerNumberDetector:
                 output_scores=True,
                 return_dict_in_generate=True,
             )
+        
+        debug_logger.debug(f"[PlayerNumberDetector] Output shape: {out.sequences.shape}")
+        debug_logger.debug(f"[PlayerNumberDetector] Output scores: {out.scores}")
+        debug_logger.debug(f"[PlayerNumberDetector] Output logits: {out.logits}")
+        
+        if not out.scores:
+            return [(None, 0.0) for _ in crops]
 
         texts = self.processor.batch_decode(out.sequences, skip_special_tokens=True)
         probs = torch.stack(out.scores, dim=1).softmax(-1)
@@ -103,6 +141,11 @@ class PlayerNumberDetector:
                 results.append((None, 0.0))
                 continue
             tok_ids = out.sequences[i, 1:-1]
+            
+            if tok_ids.numel() == 0:
+                results.append((None, 0.0))
+                continue
+            
             conf = probs[i, torch.arange(tok_ids.shape[0]), tok_ids].mean().item()
             results.append((num, conf))
         debug_logger.debug(f"[PlayerNumberDetector] Results: {results}")

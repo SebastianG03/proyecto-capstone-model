@@ -2,7 +2,7 @@ from typing import List, override
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.HeatmapPoint import HeatmapPointModel
-
+from app.logger import error_logger
 
 class TrackCollectionBall(RecordCollectionBase):
     orm_model = BallEventModel
@@ -84,9 +84,33 @@ class TrackCollectionHeatmapPoint(RecordCollectionBase):
     def get(self, obj_id: int) -> HeatmapPointModel | None:
         return self.db.query(HeatmapPointModel).filter(HeatmapPointModel.point_id == obj_id).first()
     
-    def get_by_player_id(self, player_id: int) -> List[HeatmapPointModel]:
-        return self.db.query(HeatmapPointModel).filter(HeatmapPointModel.player_id == player_id).all()
+    def get_by_player_id(self, player_id: int) -> HeatmapPointModel:
+        return self.db.query(HeatmapPointModel).filter(HeatmapPointModel.player_id == player_id).first()
     
     @override
     def get_all(self) -> list[HeatmapPointModel]:
         return self.db.query(HeatmapPointModel).all()
+
+    @override
+    def patch(self, obj_id: int, updates: dict):
+        try:
+            obj = self.db.query(HeatmapPointModel).filter(HeatmapPointModel.id == obj_id).first()
+            
+            if not obj:
+                error_logger.error(f"Registro con ID {obj_id} no encontrado.")
+                return None
+            
+            for key, val in updates.items():
+                if hasattr(obj, key):
+                    setattr(obj, key, val)
+            
+            self.db.flush()
+            self.db.commit()
+            self.db.refresh(obj)
+            return obj
+        except Exception as e:
+            error_logger.error(f"Error al actualizar registro: {e}")
+            self.db.rollback()
+            return None
+
+    

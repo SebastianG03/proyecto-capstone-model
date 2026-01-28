@@ -5,6 +5,7 @@ from app.core.config import PUBLIC_URL
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
 from datetime import datetime
+from app.entities.utils.tools_context import AnalysisContext
 from app.logger import debug_logger, info_logger
 
 
@@ -13,12 +14,12 @@ def analyze_match(
     ball_events: List[BallEventModel],
     start_time: datetime,
     players: List[Player],
-    heatmaps: Optional[Dict] = None,
     match_id: int = 0,
 ) -> List[Dict]:
     """
     Analiza los datos de un partido y devuelve estadísticas por jugador.
     """
+    heatmaps_collection = AnalysisContext().tools.heatmap_points
     # Agrupar estados por jugador
     states_by_player = defaultdict(list)
     for state in player_states:
@@ -109,8 +110,9 @@ def analyze_match(
             factor = 10**decimals
             return math.ceil(value * factor) / factor
 
-        heatmap_name = heatmaps.get(str(pid)) if heatmaps else None
-        heatmap_route = f"{PUBLIC_URL}/{heatmap_name.strip()}" if heatmap_name else ""
+        heatmap = heatmaps_collection.get_by_player_id(pid)
+        heatmap_name = f'{heatmap.path}' if heatmap else None
+        heatmap_route = f"{PUBLIC_URL}/{heatmap_name.strip()}" if heatmap_name else "https://pub-b1446258d30c4547a877d83f55960843.r2.dev/27/20260118211428_heatmap_player_1_team_None.png"
         info_logger.info(
             f"[ANALYZE_MATCH] Jugador {pid} - Heatmap: {heatmap_route}"
         )

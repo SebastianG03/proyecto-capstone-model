@@ -27,7 +27,7 @@ from app.logger import debug_logger, error_logger, info_logger
 
 def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] | None:
     try:
-        export_data_file = OUTPUT_REPORTS_DIR / f"export_data_match_{match_id}.txt"
+        export_data_file = OUTPUT_REPORTS_DIR / f"export_data_match_{match_id}.json"
         export_data_file.parent.mkdir(parents=True, exist_ok=True)
         export_data_file.touch(exist_ok=True)
         print("Archivo de reporteria creado: ", export_data_file.exists())
@@ -149,7 +149,7 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
         generate_diagrams(db)
         info_logger.info("Diagramas generados.")
         heatmap_files = upload_heatmaps_for_extracted_players(
-            db=db, match_id=match_id, extracted_player_ids=set(saved_player_ids)
+            db=db, match_id=match_id
         )
         info_logger.info("Heatmaps subidos.")
 
