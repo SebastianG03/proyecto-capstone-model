@@ -1,3 +1,6 @@
+import logging
+from typing import Optional
+
 import cv2
 import numpy as np
 from cv2.typing import MatLike
@@ -18,12 +21,16 @@ class CameraMovementEstimator(metaclass=Singleton):
         movement = estimator.update(frame_t)
     """
 
-    def __init__(self, first_frame: MatLike):
+    def __init__(
+        self,
+        first_frame: MatLike,
+        logger: Optional[logging.Logger] = None):
         self.minimum_distance = 5
         self.accum_scale = 1.0
         self.last_scale = 1.0
         self.accum_dx = 0.0
         self.accum_dy = 0.0
+        self.logger = logger or logging.getLogger(__name__)
 
         self.lk_params = dict(
             winSize=(15, 15),
@@ -51,14 +58,11 @@ class CameraMovementEstimator(metaclass=Singleton):
             **self.features_params,  # type: ignore
         )
 
-        # Último movimiento estimado → smoothing
         self.last_dx = 0.0
         self.last_dy = 0.0
-        self.alpha = 0.35  # smoothing EMA
+        self.alpha = 0.35
 
-    # -------------------------------------------------------------
-    # STREAMING UPDATE
-    # -------------------------------------------------------------
+
     def update(self, frame: MatLike):
         """
         Procesa UN SOLO FRAME y retorna el movimiento:
@@ -78,6 +82,31 @@ class CameraMovementEstimator(metaclass=Singleton):
 
             self.old_gray = frame_gray
             return 0.0, 0.0
+        
+        # if self.old_gray is None:
+        #     self.old_gray = frame_gray
+
+        if self.old_gray.shape != frame_gray.shape:
+            error_logger.error(
+                f"[CameraMovementEstimator] Shape mismatch: "
+                f"old={self.old_gray.shape}, new={frame_gray.shape}"
+            )
+            self.old_gray = frame_gray.copy()
+            self.old_features = cv2.goodFeaturesToTrack(
+                frame_gray, **self.features_params  # type: ignore
+            )
+            return 0.0, 0.0
+           
+        if (
+            self.old_gray is None
+            or self.old_features is None
+            or len(self.old_features) == 0
+        ):
+            self.old_features = cv2.goodFeaturesToTrack(
+                frame_gray, **self.features_params  # type: ignore
+            )
+            self.old_gray = frame_gray.copy()
+            return 0.0, 0.0
 
         new_features, _, _ = cv2.calcOpticalFlowPyrLK(
             self.old_gray,
@@ -91,11 +120,12 @@ class CameraMovementEstimator(metaclass=Singleton):
             new_features, self.old_features
         )
 
+
         # Threshold para considerar movimiento real
         if dist > self.minimum_distance:
+            self.old_gray = frame_gray.copy()
             self.old_features = cv2.goodFeaturesToTrack(
-                frame_gray,
-                **self.features_params,  # type: ignore
+                frame_gray, **self.features_params # type: ignore
             )
 
         # Smoothing (EMA)
@@ -128,9 +158,6 @@ class CameraMovementEstimator(metaclass=Singleton):
         """
         return self.accum_scale
 
-    # -------------------------------------------------------------
-    # APLICAR AJUSTE A TRACK
-    # -------------------------------------------------------------
     def add_adjust_positions_to_tracks(
         self,
         camera_movement_per_frame,

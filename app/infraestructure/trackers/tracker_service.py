@@ -18,23 +18,6 @@ class TrackerService(TrackerServiceBase):
         super().__init__(ball_model_path=ball_model_path, player_model_path=player_model_path)
         self.last_tracked: sv.Detections | None = None
 
-    def get_object_tracks(
-        self, frames: Union[List[MatLike], MatLike], frame_num: int, db: Session
-    ):
-        """
-        Compatibilidad con API anterior que pasaba una lista de frames.
-        En streaming, se le puede pasar un único frame.
-        """
-        print("TrackerService.get_object_tracks called.")
-        if isinstance(frames, list):
-            print(f"Procesando lista de {len(frames)} frames...")
-            for i, frame in enumerate(frames):
-                self.process_frame(frame, i, db)
-        else:
-            print("Procesando un solo frame...")
-            # Un solo frame — mantenemos frame_num = 0 si no se especifica
-            self.process_frame(frame=frames, db=db, frame_num=frame_num)
-
     def get_tracker(self, key: str):
         from app.infraestructure.trackers.tracker_factory import TrackerFactoryError
 

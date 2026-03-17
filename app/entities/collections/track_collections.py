@@ -1,8 +1,11 @@
-from typing import List, override
+from typing import override
+
+from sqlalchemy.exc import InvalidRequestError
 from app.entities.interfaces.record_collection_base import RecordCollectionBase
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.HeatmapPoint import HeatmapPointModel
 from app.logger import error_logger
+from app.entities.utils.global_values_store import globals
 
 class TrackCollectionBall(RecordCollectionBase):
     orm_model = BallEventModel
@@ -13,7 +16,16 @@ class TrackCollectionBall(RecordCollectionBase):
 
     @override
     def get_last(self) -> BallEventModel | None:
-        return self.db.query(BallEventModel).order_by(BallEventModel.id.desc()).first()
+        try:
+            return self.db.query(BallEventModel).order_by(BallEventModel.id.desc()).first()
+        except InvalidRequestError as ie:
+            error_logger.error(f"[DBError] Error de consulta al obtener último registro de BallEventModel: {ie}, iniciando refresco de la sesión y reintentando.")
+            self.db.rollback()
+            self.db = globals.connection_manager.create_session()
+            return self.db.query(BallEventModel).order_by(BallEventModel.id.desc()).first()
+        except Exception as e:
+            error_logger.error(f"[DBError] Error al obtener último registro de BallEventModel: {e}")
+            return None
 
     @override
     def get_record_for_frame(
@@ -31,17 +43,41 @@ class TrackCollectionBall(RecordCollectionBase):
                 .filter(BallEventModel.frame_index == frame_index)
             ).first()
             return item
+        except InvalidRequestError as ie:
+            error_logger.error(f"[DBError] Error de consulta al obtener registro para frame: {ie}, iniciando refresco de la sesión y reintentando.")
+            self.db.rollback()
+            self.db = globals.connection_manager.create_session()
+            return (
+                self.db
+                .query(BallEventModel)
+                .filter(BallEventModel.track_id == track_id)
+                .filter(BallEventModel.frame_index == frame_index)
+            ).first()
         except Exception as e:
-            print(f"Error al obtener registro para frame: {e}")
+            error_logger.error(f"[DBError] Error al obtener registro para frame: {e}")
 
     @override
     def get_all(self) -> list[BallEventModel]:
-        return (
-            self.db
-            .query(BallEventModel)
-            .order_by(BallEventModel.frame_index.asc())
-            .all()
-        )
+        try:
+            return (
+                self.db
+                .query(BallEventModel)
+                .order_by(BallEventModel.frame_index.asc())
+                .all()
+            )
+        except InvalidRequestError as ie:
+            error_logger.error(f"[DBError] Error de consulta al obtener todos los registros de BallEventModel: {ie}, iniciando refresco de la sesión y reintentando.")
+            self.db.rollback()
+            self.db = globals.connection_manager.create_session()
+            return (
+                self.db
+                .query(BallEventModel)
+                .order_by(BallEventModel.frame_index.asc())
+                .all()
+            )
+        except Exception as e:
+            error_logger.error(f"[DBError] Error al obtener todos los registros de BallEventModel: {e}")
+            return []
 
 
 class TrackCollectionHeatmapPoint(RecordCollectionBase):

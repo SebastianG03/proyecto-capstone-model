@@ -94,26 +94,24 @@ class ShotDetector:
         # Historial de posesión
         self._possession_history: deque[BallPossessionSnapshot] = deque(
             maxlen=self.POSSESSION_WINDOW
-        )
+        ) # limitar memoria
         
         # Trayectoria del balón
         self._ball_trajectory: deque[BallTrajectoryPoint] = deque(
             maxlen=self.TRAJECTORY_WINDOW
-        )
+        ) # limitar memoria
         
         # Registro de tiros detectados
-        self._shots: List[ShotEvent] = []
+        self._shots: List[ShotEvent] = [] # limitar memoria
         
         # Control de cooldown
-        self._last_shot_frame: int = -self.SHOT_COOLDOWN_FRAMES
+        self._last_shot_frame: int = -self.SHOT_COOLDOWN_FRAMES # limitar memoria
         
         # Estado anterior para calcular velocidad
-        self._prev_ball_pos: Optional[Tuple[float, float]] = None
+        self._prev_ball_pos: Optional[Tuple[float, float]] = None # limitar memoria
         self._prev_frame: int = 0
 
-    # ------------------------------------------------------------------ #
-    # Helpers geométricos
-    # ------------------------------------------------------------------ #
+
     @staticmethod
     def _bbox_center(bbox: list[float]) -> Tuple[float, float]:
         x1, y1, x2, y2 = bbox
@@ -123,14 +121,14 @@ class ShotDetector:
     def _distance_point_to_bbox(point: Tuple[float, float], bbox: list[float]) -> float:
         """Distancia desde un punto al centro de un bbox"""
         cx, cy = ShotDetector._bbox_center(bbox)
-        return np.linalg.norm(np.array(point) - np.array([cx, cy]))
+        return float(np.linalg.norm(np.array(point) - np.array([cx, cy])))
 
     @staticmethod
     def _distance_bbox(bbox_a: list[float], bbox_b: list[float]) -> float:
-        return np.linalg.norm(
+        return float(np.linalg.norm(
             np.array(ShotDetector._bbox_center(bbox_a))
             - np.array(ShotDetector._bbox_center(bbox_b))
-        )
+        ))
 
     @staticmethod
     def _ball_inside_goal(ball_bbox: list[float], goal_bbox: list[float]) -> bool:
@@ -165,9 +163,7 @@ class ShotDetector:
             
         return (dx / norm, dy / norm)
 
-    # ------------------------------------------------------------------ #
-    # Lógica de posesión
-    # ------------------------------------------------------------------ #
+
     def _update_possession_cache(
         self,
         frame: int,
@@ -229,9 +225,7 @@ class ShotDetector:
         )
         return best_id
 
-    # ------------------------------------------------------------------ #
-    # Lógica de trayectoria
-    # ------------------------------------------------------------------ #
+
     def _update_ball_trajectory(
         self, 
         frame: int, 
@@ -361,9 +355,6 @@ class ShotDetector:
         # Por defecto, desviado si no es gol
         return ShotOutcome.MISSED
 
-    # ------------------------------------------------------------------ #
-    # API pública
-    # ------------------------------------------------------------------ #
     def update(
         self,
         detections: sv.Detections,
@@ -526,9 +517,6 @@ class ShotDetector:
         self._prev_frame = 0
 
 
-# ------------------------------------------------------------------------- #
-# Mantener GoalScorerDetector para compatibilidad hacia atrás
-# ------------------------------------------------------------------------- #
 
 class GoalScorerDetector(ShotDetector):
     """
@@ -536,7 +524,7 @@ class GoalScorerDetector(ShotDetector):
     Solo detecta GOLES, no todos los tiros.
     """
     
-    def update(
+    def updateScorer(
         self,
         detections: sv.Detections,
         match_id: int,

@@ -33,8 +33,13 @@ MANIFEST
 *.spec
 
 # Data
-*.sqlite
+trocr/
+*.sqlite*
+*.sqlite-wal
+*.sqlite-shm
 *.txt
+*.json
+*.task
 *.zip
 *.tar.gz
 *.rar
@@ -320,3 +325,7 @@ events.out.tfevents.*
 =======
 
 app/tracks.json
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md

@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy.orm import Session
 from cv2.typing import MatLike
 
@@ -18,6 +20,7 @@ class AnalysisTools(metaclass=Singleton):
         from app.infraestructure.speed_and_distance_estimator.speed_and_distance_estimator import (
             SpeedAndDistanceEstimator,
         )
+        from app.infraestructure.camera.depth_estimator import DepthEstimator
         from app.infraestructure.player_ball_assigner.player_ball_assigner import (
             PlayerBallAssigner,
         )
@@ -30,16 +33,18 @@ class AnalysisTools(metaclass=Singleton):
         self.camera_movement_estimator: CameraMovementEstimator
         self.number_recognizer: PlayerNumberDetector
         self.trocr_buffer: TROCRBuffer
+        self.depth_estimator: DepthEstimator
 
     def start(self, db: Session, first_frame: MatLike):
         from app.entities.utils.tools_context import analysis_context
         from app.entities.models import PlayerState, BallEventModel
         from app.entities.collections import TrackCollectionPlayer, TrackCollectionBall, TrackCollectionHeatmapPoint
-        from app.entities.utils.global_values_store import GlobalValuesStore
+        from app.entities.utils.global_values_store import globals
         from app.infraestructure.camera.number_recognizer import PlayerNumberDetector
         from app.infraestructure.camera.trocr_buffer import TROCRBuffer
         from app.infraestructure.view_transformer.view_transformer import ViewTransformer
         from app.infraestructure.team_assigner.team_assigner import TeamAssigner
+        from app.infraestructure.camera.depth_estimator import DepthEstimator
         from app.entities.models import HeatmapPoint
         from app.infraestructure.speed_and_distance_estimator.speed_and_distance_estimator import (
             SpeedAndDistanceEstimator,
@@ -49,8 +54,12 @@ class AnalysisTools(metaclass=Singleton):
         )
         from app.infraestructure.camera.camera_movement_estimator import CameraMovementEstimator
         from app.utils.routes import TROCR_PATH
+        import torch
+        from app.logger.logger import get_logger
+        
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger = get_logger(logging.DEBUG)
 
-        globals = GlobalValuesStore()
         self.player_records = TrackCollectionPlayer(db)
         self.player_records.orm_model = PlayerState
         self.ball_records = TrackCollectionBall(db)
@@ -62,9 +71,10 @@ class AnalysisTools(metaclass=Singleton):
         self.speed_and_distance = SpeedAndDistanceEstimator(frame_rate=globals.fps)
         self.team_assigner = TeamAssigner()
         self.player_ball_assigner = PlayerBallAssigner(fps=globals.fps)
-        self.camera_movement_estimator = CameraMovementEstimator(first_frame)
+        self.camera_movement_estimator = CameraMovementEstimator(first_frame, logger)
         self.number_recognizer = PlayerNumberDetector(TROCR_PATH.as_posix())
         self.trocr_buffer = TROCRBuffer()
+        self.depth_estimator = DepthEstimator(device, frame_rate=globals.fps)
         analysis_context.tools = self
 
     def reset(self):

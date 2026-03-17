@@ -1,13 +1,12 @@
 from datetime import datetime, timezone
 import json
 import httpx
-from sqlalchemy import create_engine, event
-from sqlalchemy.pool import QueuePool
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import event
 
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
-from app.infraestructure.services.database import Base, create_temporary_database
+from app.infraestructure.database.connection_manager import ConnectionManager
+from app.entities.utils.global_values_store import globals
 from sqlalchemy.orm import Session
 
 from app.application.post_process.proccess_final_data import analyze_match
@@ -21,27 +20,14 @@ async def process_video_async(video_name: str, match_id: int, color: str):
     """
     Ejecuta el análisis en segundo plano con una BD en memoria aislada.
     """
-    print(f"Iniciando análisis en background para video: {video_name}, match_id: {match_id}")
+    info_logger.info(f"Iniciando análisis en background para video: {video_name}, match_id: {match_id}")
     db_path = BASE_RES_DIR / "database" / f"temp_db_{match_id}.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.touch(exist_ok=True)
+    connection_manager = ConnectionManager(match_id=match_id)
+    globals.connection_manager = connection_manager
     
-    # Configuración mejorada de SQLite para evitar bloqueos
-    engine = create_engine(
-        f"sqlite:///{db_path.as_posix()}", 
-        echo=False, 
-        connect_args={
-            "check_same_thread": False,
-            "timeout": 30  # Timeout de 30 segundos
-        },
-        poolclass=QueuePool,
-        pool_size=5,
-        max_overflow=10,
-        pool_recycle=3600,
-        pool_pre_ping=True
-    )
-    
-    # Configurar pragmas de SQLite
-    @event.listens_for(engine, "connect")
+    @event.listens_for(connection_manager.engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         """Configura pragmas de SQLite para mejor rendimiento y recuperación de bloqueos"""
         cursor = dbapi_conn.cursor()
@@ -51,41 +37,28 @@ async def process_video_async(video_name: str, match_id: int, color: str):
         cursor.execute("PRAGMA cache_size=10000")
         cursor.close()
     
-    Base.metadata.create_all(bind=engine)
-    SessionLocal = sessionmaker(
-        autocommit=False, 
-        autoflush=False, 
-        bind=engine,
-        expire_on_commit=False
-    )
-    db = SessionLocal()
 
     try:
         info_logger.info(f"Ejecutando análisis en background para video: {video_name}")
-        _ = await process_run(
-            db=db, video_name=video_name, match_id=match_id, color=color
-        )
+        _ = await process_run(video_name=video_name, match_id=match_id, color=color)
         info_logger.info("Análisis finalizado.")
     except Exception as e:
         error_logger.error(f"Error en análisis: {str(e)}")
     finally:
         info_logger.info("Cerrando sesión de base de datos y liberando recursos.")
-        db.close()
-        engine.dispose()
+        connection_manager.close_session()
         if not DEBUG:
             db_path.unlink()
 
 
-async def process_run(db: Session, video_name: str, match_id: int, color: str):
+async def process_run(video_name: str, match_id: int, color: str):
     try:
         start = datetime.now(timezone.utc)
         from app.application.analysis.runner import run_analysis
 
         info_logger.info("Analisis iniciado...")
-        heatmaps = run_analysis(db=db, video_name=video_name, match_id=match_id)
-        _ = await export_data(
-            db, match_id, start_time=start, color=color
-        )
+        heatmaps = run_analysis(video_name=video_name, match_id=match_id)
+        _ = await export_data(match_id, start_time=start, color=color)
     except Exception as e:
         error_logger.error(f"[BACKGROUND_TASK] Error al analizar el video, error: {e}")
         error_logger.error(traceback.format_exc())
@@ -93,13 +66,13 @@ async def process_run(db: Session, video_name: str, match_id: int, color: str):
 
 
 async def export_data(
-    db: Session,
     match_id: int,
     start_time: datetime,
     color: str,
     max_records: int = 100000,
 ):
     try:
+        db = globals.connection_manager.create_session()
         player_records = (
             db.query(PlayerState).order_by(PlayerState.id).limit(max_records).all()
         )

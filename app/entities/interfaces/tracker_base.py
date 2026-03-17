@@ -1,7 +1,9 @@
+import logging
+
 import supervision as sv
 from ultralytics.models import YOLO
 from sqlalchemy.orm import Session
-from app.logger import info_logger
+from app.logger import get_logger
 
 
 class Tracker:
@@ -14,18 +16,19 @@ class Tracker:
 
     def __init__(self, model: YOLO):
         self.model: YOLO = model
+        self.logger = get_logger(logging.DEBUG)
 
     def _bbox_to_center(self, bbox: list) -> tuple[float, float]:
-        info_logger.info("[Tracker] Convirtiendo bbox a centro...")
+        self.logger.info("[Tracker] Convirtiendo bbox a centro...")
         x1, y1, x2, y2 = bbox
-        info_logger.info(
+        self.logger.info(
             f"[Tracker] Bbox recibida: {bbox}, "
             f"coordenadas extraídas: x1={x1}, y1={y1}, x2={x2}, y2={y2}"
         )
         cx = float((x1 + x2) / 2.0)
-        info_logger.info(f"[Tracker] cx={cx}")
+        self.logger.info(f"[Tracker] cx={cx}")
         cy = float((y1 + y2) / 2.0)
-        info_logger.info(f"[Tracker] cy={cy}")
+        self.logger.info(f"[Tracker] cy={cy}")
         return cx, cy
 
     def get_object_tracks(
@@ -44,7 +47,7 @@ class Tracker:
         - detection_supervision: detecciones originales en formato supervision (sin tracks)
         - tracks_collection: repo/collection para persistir resultados
         """
-        info_logger.info("Tracker.get_object_tracks called.")
+        self.logger.info("Tracker.get_object_tracks called.")
         raise NotImplementedError
 
     def reset(self) -> None:

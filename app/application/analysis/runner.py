@@ -2,15 +2,19 @@ import json
 from pathlib import Path
 import time
 import tracemalloc
-from typing import List
 
-from app.core.config import MAX_EMPTY_BATCHES, MAX_PROCESSING_TIME
+from tqdm import tqdm
+
+from app.core.config import BATCH_SIZE, DEBUG, MAX_EMPTY_BATCHES
 from app.infraestructure.plotting import generate_diagrams
 
+from app.infraestructure.services.video_processing_service import check_video, get_total_frames
 from app.infraestructure.trackers import TrackerService
-from sqlalchemy.orm import Session
+from app.entities.utils.global_values_store import globals
 
 from app.application.analysis.process import process_frame
+from app.logger.memory_tracker import MemoryReporter
+from app.logger.process_time_reporter import ProcessTimeReporter
 from app.shared.analysis_tools import AnalysisTools
 from app.infraestructure.services import (
     upload_heatmaps_for_extracted_players,
@@ -21,24 +25,23 @@ from app.infraestructure.services import (
 )
 import traceback
 
-from app.utils.routes import INPUT_VIDEOS_DIR, BALL_MODEL_PATH, OUTPUT_REPORTS_DIR, PLAYER_MODEL_PATH
+from app.utils.routes import BALL_MODEL_PATH, OUTPUT_REPORTS_DIR, PLAYER_MODEL_PATH
 from app.logger import debug_logger, error_logger, info_logger
 
 
-def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] | None:
-    try:
-        export_data_file = OUTPUT_REPORTS_DIR / f"export_data_match_{match_id}.json"
-        export_data_file.parent.mkdir(parents=True, exist_ok=True)
-        export_data_file.touch(exist_ok=True)
-        print("Archivo de reporteria creado: ", export_data_file.exists())
-    except Exception as e:
-        print(f"Error creando archivo de reporteria: {e}")
-        raise e
-    # -----------------------------
-    # MÉTRICAS Y CONFIGURACIÓN
-    # -----------------------------
+def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
+    metrics_file = OUTPUT_REPORTS_DIR / f"metrics_match_{match_id}.json"
+    time_reporter = ProcessTimeReporter(logger=debug_logger, match_id=match_id)
+    frame_num = 0
+    empty_batches = 0
     tracemalloc.start()
     start_time = time.time()
+    memory_reporter = MemoryReporter(
+        match_id=match_id,
+        alert_threshold_mb=3000
+    )
+    
+    db = globals.connection_manager.create_session()
 
     metrics = {
         "processing_time": [],
@@ -48,32 +51,41 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
         "velocity_inconsistencies": {"players": 0, "referees": 0},
     }
 
-    print("Prepara el modelo si es necesario...")
     prepare_model(model_path=BALL_MODEL_PATH, source_path=BALL_MODEL_PATH.parent)
 
-    # Descarga video
     downloader = R2Downloader()
 
-    print(f"Descargando video {video_name}...")
-    download_path = Path(INPUT_VIDEOS_DIR, video_name)
-    downloader.build_destination_path(
-        key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix()
-    )
-    downloader.stream_download(
-        key=video_name, destination_path=download_path.as_posix()
-    )
-    print(f"Video descargado en {INPUT_VIDEOS_DIR.as_posix()}")
-    print(f"Video descargado en {download_path.as_posix()}")
+    # download_path = Path(INPUT_VIDEOS_DIR, video_name)
+    download_path = Path("C:/Users/Usuario/Desktop/projects/proyecto-capstone-model/app/res/input_videos/0fd52eb5-f7cc-45f2-8ea9-b7b451864ce8-Clip_3_00055618.mkv")
+    # downloader.build_destination_path(
+    #     key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix()
+    # )
+    # downloader.stream_download(
+    #     key=video_name, destination_path=download_path.as_posix()
+    # )
+    # print(f"Video descargado en {download_path.as_posix()}")
     # -----------------------------
-    # LECTURA DEL VIDEO
-    # -----------------------------
-    print(download_path)
-    print(type(download_path))
-    video_stream = read_video(download_path.as_posix())
+
+    batch_middle = BATCH_SIZE // 2
+    batch_proportion = batch_middle // 2
+    is_video = check_video(download_path.as_posix())
+    total_frames = get_total_frames(download_path.as_posix())
+    progress = tqdm(
+        total=total_frames,
+        desc="Procesando video",
+        unit="frame(s)"
+    )
+    
+    if not is_video:
+        error_logger.error("Error: Video not found")
+        raise FileNotFoundError
+    
+    video_stream = read_video(download_path.as_posix(), batch_size=BATCH_SIZE)
     images_per_player = 3
-    if not video_stream:
+
+    if not video_stream: 
         error_logger.error("Error: No frames read from video")
-        return
+        raise Exception("El video no es válido, está vacío o no se encuentra disponible en la nube.")
 
     try:
         tracker = TrackerService(
@@ -81,12 +93,9 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
             player_model_path=PLAYER_MODEL_PATH.as_posix()
             )
 
-        try:
-            first_batch = next(video_stream)
-            first_frame, _ = first_batch[0]
-        except StopIteration:
-            error_logger.error("Error: Video is empty")
-            return
+        first_batch = next(video_stream)
+        first_frame = first_batch[0]
+        first_batch = None
 
         if not first_frame.any():
             error_logger.error("Error: First frame is empty")
@@ -94,18 +103,15 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
         info_logger.info("Inicializando servicios de análisis...")
         tools = AnalysisTools()
         tools.start(db=db, first_frame=first_frame)
+        first_frame = None
+    except StopIteration as st:
+        error_logger.error("Error: No frames read from video")
+        raise st
     except Exception as e:
         error_logger.error(f"Error initializing services: {e}")
         error_logger.error(traceback.format_exc())
         raise e
 
-    frame_num = 0
-
-    # ==========================================================================
-    #                               LOOP PRINCIPAL
-    # ==========================================================================
-    empty_batches = 0
-    saved_player_ids: List[int] = []
     try:
         for batch in video_stream:
             if not batch or len(batch) == 0:
@@ -119,33 +125,45 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
 
             empty_batches = 0
 
-            if time.time() - start_time > 500:
-                debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
+            # if time.time() - start_time > 500:
+            #     debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
+            #     break
+            
+            if frame_num > 2000 and DEBUG:
                 break
             
-            
-            print(
-                f"\n{'#' * 60}\nProcesando batch de {len(batch)} frames...\n{'#' * 60}\n"
-            )
-            frame_num, updated_ids, updated_metrics = process_frame(
+            progress.update(len(batch))
+
+            frames = [
+                batch[0],
+                batch[batch_middle - batch_proportion],
+                batch[batch_middle],
+                batch[batch_middle + batch_proportion],
+                batch[-1]
+            ]
+
+            frame_num = process_frame(
                 match_id=match_id,
-                video_batch=batch,
+                video_batch=frames,
                 frame_num=frame_num,
                 db=db,
                 tracker=tracker,
                 metrics=metrics,
-                images_per_player=images_per_player,
-                saved_player_ids=saved_player_ids,
-                export_data_file=export_data_file,
+                export_data_file=metrics_file,
+                time_reporter=time_reporter
             )
-            saved_player_ids.extend(updated_ids)
-            metrics.update(updated_metrics)
+            time_reporter.publish()
             info_logger.info(
                 f"Batch procesado. Frames hasta ahora: {frame_num + len(batch)}"
             )
-
-        info_logger.info(f"Jugadores con imágenes extraídas {saved_player_ids}")
-
+            try:
+                memory_reporter.after_loop(label=f"Frame_{frame_num}", local_vars=locals())
+            except:
+                
+                break
+        
+        progress.close()
+        info_logger.info("Procesamiento finalizado.")
         generate_diagrams(db)
         info_logger.info("Diagramas generados.")
         heatmap_files = upload_heatmaps_for_extracted_players(
@@ -160,10 +178,10 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
             "Tiempo total de procesamiento": f"{total_time / 60:.2f} minutos",
         })
 
-        print("\n" + "=" * 50)
-        print("        RESUMEN FINAL DEL PROCESAMIENTO")
-        print("=" * 50)
-        print(f"Tiempo total: {total_time / 60:.2f} min")
+        info_logger.info("\n" + "=" * 50)
+        info_logger.info("        RESUMEN FINAL DEL PROCESAMIENTO")
+        info_logger.info("=" * 50)
+        info_logger.info(f"Tiempo total: {total_time / 60:.2f} min")
         # print(f"Memoria máxima usada: {max(metrics['memory_usage']):.2f} MB")
         info_logger.info(
             f"Frames balón detectado: {metrics['ball_detection']['detected']}"
@@ -171,7 +189,6 @@ def run_analysis(db: Session, video_name: str, match_id: int) -> dict[int, str] 
         info_logger.info(
             f"Frames balón interpolado: {metrics['ball_detection']['interpolated']}"
         )
-        metrics_file = OUTPUT_REPORTS_DIR / f"metrics_match_{match_id}.json"
         info_logger.info(f"Escribiendo métricas a {metrics_file.as_posix()}...")
         metrics_file.parent.mkdir(parents=True, exist_ok=True)
         metrics_file.write_text(

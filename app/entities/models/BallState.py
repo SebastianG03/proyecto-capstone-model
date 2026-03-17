@@ -1,6 +1,6 @@
 import json
 from sqlalchemy import Column, Integer, Float, String
-from app.infraestructure.services.database import Base
+from app.infraestructure.database.connection_manager import Base
 
 
 class BallEventModel(Base):

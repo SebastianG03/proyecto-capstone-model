@@ -1,5 +1,5 @@
 from sqlalchemy import Column, DateTime, Integer, Float, String, func
-from app.infraestructure.services.database import Base
+from app.infraestructure.database.connection_manager import Base
 
 
 class HeatmapPointModel(Base):

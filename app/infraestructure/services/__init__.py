@@ -10,14 +10,7 @@ from .video_processing_service import (
     read_video as read_video,
     extract_player_images as extract_player_images,
 )
-from .database import (
-    Base as Base,
-    engine as engine,
-    get_db as get_db,
-    DATABASE_URL as DATABASE_URL,
-    SessionLocal as SessionLocal,
-    create_database as create_database,
-)
+
 from .verify_model import prepare_model as prepare_model, model_exists as model_exists
 from .upload_service import upload_file as upload_file, upload as upload
 from .upload_heatmaps import (

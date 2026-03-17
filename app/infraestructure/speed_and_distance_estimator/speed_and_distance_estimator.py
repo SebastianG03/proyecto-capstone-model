@@ -4,9 +4,9 @@ import numpy as np
 from scipy.signal import savgol_filter
 from sqlalchemy.orm import Session
 
-from app.entities.collections import TrackCollectionPlayer
+from app.entities.collections import TrackCollectionPlayer, player_collections
 from app.entities.models.PlayerModels import PlayerState
-from app.entities.utils.global_values_store import GlobalValuesStore
+from app.entities.utils.global_values_store import globals
 from app.entities.utils.singleton import Singleton
 from app.infraestructure.services.bbox_processor_service import measure_scalar_distance
 from app.logger import info_logger, error_logger
@@ -32,16 +32,16 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             poly_order (int): Orden de la ecuación de Savitzky-Golay para suavizar las posiciones
             de los jugadores (por defecto 2).
         """
-        self.globals = GlobalValuesStore()
         self.frame_rate = frame_rate
         self.sprint_threshold = sprint_threshold_kmh
         self.smoothing_window = smoothing_window
         self.poly_order = poly_order
+        self.last_frame_calculated = 0
 
-        self.max_human_speed_kmh = self.globals.max_human_speed_kmh
-        self.max_acceleration_ms2 = self.globals.max_accel_ms2
-        self.max_dist_per_frame_m = self.globals.max_dist_per_frame_m
-        self.min_dt_s = self.globals.min_dt_s
+        self.max_human_speed_kmh = globals.max_human_speed_kmh
+        self.max_acceleration_ms2 = globals.max_accel_ms2
+        self.max_dist_per_frame_m = globals.max_dist_per_frame_m
+        self.min_dt_s = globals.min_dt_s
 
     def _smooth_positions(self, positions: List[np.ndarray]) -> np.ndarray:
         """
@@ -50,7 +50,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         se devuelve la última posición.
         """
         n = len(positions)
-        if n < self.smoothing_window:  # < 7  → usa la última
+        if n < self.smoothing_window:
             return positions[-1]
 
         xs = [p[0] for p in positions]
@@ -78,7 +78,33 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         Returns:
             List[PlayerState]: Lista de registros de un usuario en la base de datos.
         """
-        return TrackCollectionPlayer(db).get_player_states(player_id)
+        return TrackCollectionPlayer(db).get_player_states(player_id)[:20]
+    
+    def calculate_distance(
+        self,
+        pos1: np.ndarray,
+        pos2: np.ndarray,
+        pixels_to_meters: float,
+        depth: float = 1,
+        camera_scale: float = 1,
+        ) -> float:
+        dist_px = measure_scalar_distance(pos1, pos2)
+        dist_m = dist_px * pixels_to_meters * depth / camera_scale
+        return float(dist_m)
+    
+    def get_previous_state(self, players: List[PlayerState], actual_frame: int):
+        actual_frame = 0
+        last_recognized_pos = len(players) // 3
+        previous_state = players[last_recognized_pos]
+
+        for player in players:
+            frame_index = int(f'{player.frame_index}')
+            
+            if frame_index % 15 == 0 or actual_frame - 15 >  self.last_frame_calculated:
+                previous_state = player
+                break
+
+        return previous_state
 
     def process_track(
         self,
@@ -87,6 +113,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         track: PlayerState,
         pixels_to_meters: float,
         camera_scale: float,
+        depth: float,
         dt: float,
         db: Session,
     ) -> None:
@@ -102,20 +129,28 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             info_logger.info(
                 f"[SpeedAndDistance] Procesando track {track_id} en frame {frame_num}"
             )
-
+            
             x, y = float(f"{track.x}"), float(f"{track.y}")
+            pos = np.array([x, y])
+            pid = int(float(f"{track.player_id}"))
+            fidx = int(float(f"{track.frame_index}"))
+            
+            if frame_num - 15 < self.last_frame_calculated:
+                return
+            
+            if fidx == self.last_frame_calculated:
+                return
+            
+            self.last_frame_calculated = frame_num
+
             if x is None or y is None:
                 info_logger.warning(
                     f"[SpeedAndDistance] Posición inválida para track {track_id}"
                 )
                 return
 
-            pos = np.array([x, y])
-            pid = int(float(f"{track.player_id}"))
-            fidx = int(float(f"{track.frame_index}"))
-
             states = self._get_states(pid, db)
-            if len(states) < 2:  # primer frame
+            if len(states) < 2:
                 TrackCollectionPlayer(db).patch_state(
                     pid,
                     fidx,
@@ -133,26 +168,28 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
 
             valid_pos = [
                 np.array([float(f"{s.x}"), float(f"{s.y}")])
-                for s in states[-10:]
+                for s in states[:12]
                 if s.x is not None and s.y is not None
             ]
             smoothed_pos = (
-                self._smooth_positions(valid_pos) if len(valid_pos) >= 6 else pos
+                self._smooth_positions(valid_pos)
+                if len(valid_pos) >= self.smoothing_window // 2
+                else pos
             )
 
-            prev_state = states[-2]
-            prev_pos = np.array([float(f"{prev_state.x}"), float(f"{prev_state.y}")])
-            raw_dist_m = (
-                measure_scalar_distance(smoothed_pos, prev_pos)
-                * pixels_to_meters
-                / camera_scale
-            )
+            prev_state = self.get_previous_state(states, frame_num)
+            prev_pos = np.array([float(f'{prev_state.x}'), float(f'{prev_state.y}')])
+            raw_dist_m = self.calculate_distance(
+                smoothed_pos,
+                prev_pos,
+                pixels_to_meters,
+                depth,
+                camera_scale)
 
             if dt <= 0.0 or dt < self.min_dt_s:
                 info_logger.warning(
                     f"[SpeedAndDistance] dt muy pequeño ({dt:.4f}s) → se ignora frame"
                 )
-                # return
                 raw_dist_m = 0.5
 
             if raw_dist_m > self.max_dist_per_frame_m:
@@ -166,11 +203,11 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             if speed_kmh > self.max_human_speed_kmh:
                 last_speeds = [
                     float(f"{s.speed}")
-                    for s in states[-5:]
+                    for s in states[-10:]
                     if s.speed is not None
                     and float(f"{s.speed}") <= self.max_human_speed_kmh
                 ]
-                speed_kmh = float(np.mean(last_speeds)) if last_speeds else 0.0
+                speed_kmh = float(np.median(last_speeds)) if last_speeds else 0.0
                 info_logger.warning(
                     f"[SpeedAndDistance] Velocidad fuera de rango corregida a {speed_kmh:.2f} km/h"
                 )
@@ -178,6 +215,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             prev_speed = (
                 float(f"{prev_state.speed}") if prev_state.speed is not None else 0.0
             )
+
             acceleration_ms2 = (speed_kmh - prev_speed) / 3.6 / dt
             acceleration_ms2 = float(
                 np.clip(
@@ -187,11 +225,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
                 )
             )
 
-            total_distance = (
-                float(f"{states[-1].distance}")
-                if states[-1].distance is not None
-                else 0.0
-            ) + (speed_kmh / 3.6 * dt)
+            total_distance = TrackCollectionPlayer(db).calculate_player_total_distance(pid)
 
             is_sprint = speed_kmh >= self.sprint_threshold
 
@@ -208,7 +242,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
                     "is_sprint": is_sprint,
                 },
             )
-
+            states = None
         except Exception as e:
             error_logger.error(
                 f"[SpeedAndDistance] Error procesando track {track}: {e}"

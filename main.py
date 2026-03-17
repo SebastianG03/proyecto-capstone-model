@@ -2,7 +2,7 @@ from app.api.v1.endpoints import analyze_router
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.utils.routes import ensure_directories
-
+from sqlalchemy import event
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

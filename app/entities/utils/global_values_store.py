@@ -1,6 +1,7 @@
 from typing import Optional
 
 from app.entities.utils.singleton import Singleton
+from app.infraestructure.database.connection_manager import ConnectionManager
 
 
 class GlobalValuesStore(metaclass=Singleton):
@@ -18,10 +19,11 @@ class GlobalValuesStore(metaclass=Singleton):
         """
         self._timestamp: float = float(timestamp)
         self._fps: float = float(fps)
-        self.MAX_HUMAN_SPEED_KMH = 25.0
+        self.MAX_HUMAN_SPEED_KMH = 30.0
         self.MAX_ACCEL_MS2 = 6.0
         self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24  # fps
         self.MIN_DT_S = 1.0 / (2 * 24)
+        self._connection_manager: ConnectionManager
 
     # --- Getters ---
     @property
@@ -53,6 +55,15 @@ class GlobalValuesStore(metaclass=Singleton):
     def min_dt_s(self) -> float:
         """Devuelve el valor actual del tiempo mínimo entre frames en segundos."""
         return self.MIN_DT_S
+    
+    @property
+    def connection_manager(self) -> ConnectionManager:
+        return self._connection_manager
+    
+    @connection_manager.setter
+    def connection_manager(self, connection_manager: ConnectionManager) -> None:
+        self._connection_manager = connection_manager
+    
 
     # --- Setters individuales ---
     @timestamp.setter
@@ -79,8 +90,14 @@ class GlobalValuesStore(metaclass=Singleton):
             self._fps = float(fps)
             self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24
             self.MIN_DT_S = 1.0 / (2 * 24)
+            
+    def reset(self) -> None:
+        self._timestamp = 0.0
+        self._fps = 0.0
+        self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24
+        self.MIN_DT_S = 1.0 / (2 * 24)
+        
 
-    # --- Representación legible ---
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(timestamp={self._timestamp}, fps={self._fps})"

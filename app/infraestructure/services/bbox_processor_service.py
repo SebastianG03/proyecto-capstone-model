@@ -69,51 +69,55 @@ def calculate_area_boundary_ends(
     Recibe un frame TOP-VIEW (MatLike) y devuelve los extremos de la línea
     de área (11 m) en coordenadas del mismo espacio que usas para jugadores.
     """
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-    debug_logger.debug(
-        "[CalculateAreaBoundaryEnds] Detectando líneas en el frame para encontrar la línea de área."
-    )
-
-    lines = cv2.HoughLinesP(
-        edges,
-        rho=1,
-        theta=np.pi / 180,
-        threshold=60,
-        minLineLength=int(0.50 * frame.shape[1]),
-        maxLineGap=15,
-    )
-    if lines is None:
+    try:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
         debug_logger.debug(
-            "[CalculateAreaBoundaryEnds] No se detectaron líneas en el frame."
+            "[CalculateAreaBoundaryEnds] Detectando líneas en el frame para encontrar la línea de área."
         )
-        return None
 
-    # quedarse solo con horizontales
-    hor = [
-        line[0]
-        for line in lines
-        if abs(np.arctan2(line[0][3] - line[0][1], line[0][2] - line[0][0])) < 0.09
-    ]  # ~5°
-    if not hor:
+        lines = cv2.HoughLinesP(
+            edges,
+            rho=1,
+            theta=np.pi / 180,
+            threshold=60,
+            minLineLength=int(0.50 * frame.shape[1]),
+            maxLineGap=15,
+        )
+        if lines is None:
+            debug_logger.debug(
+                "[CalculateAreaBoundaryEnds] No se detectaron líneas en el frame."
+            )
+            return None
+
+        # quedarse solo con horizontales
+        hor = [
+            line[0]
+            for line in lines
+            if abs(np.arctan2(line[0][3] - line[0][1], line[0][2] - line[0][0])) < 0.09
+        ]  # ~5°
+        if not hor:
+            debug_logger.debug(
+                "[CalculateAreaBoundaryEnds] No se detectaron líneas horizontales en el frame."
+            )
+            return None
+
+        # la más baja (línea de área inferior)
+        x1, y1, x2, y2 = max(hor, key=lambda line: max(line[1], line[3]))
         debug_logger.debug(
-            "[CalculateAreaBoundaryEnds] No se detectaron líneas horizontales en el frame."
+            "[CalculateAreaBoundaryEnds] Línea de área detectada en coordenadas: "
+            f"({x1}, {y1}), ({x2}, {y2})"
         )
+        A = np.array([min(x1, x2), float(y1)], dtype=float)
+        B = np.array([max(x1, x2), float(y2)], dtype=float)
+        debug_logger.debug(
+            "[CalculateAreaBoundaryEnds] Extremos de la línea de área: "
+            f"A={A}, B={B}"
+        )
+        return A, B
+    except Exception as e:
+        error_logger.error(f"[CalculateAreaBoundaryEnds] Error: {e}")
         return None
-
-    # la más baja (línea de área inferior)
-    x1, y1, x2, y2 = max(hor, key=lambda line: max(line[1], line[3]))
-    debug_logger.debug(
-        "[CalculateAreaBoundaryEnds] Línea de área detectada en coordenadas: "
-        f"({x1}, {y1}), ({x2}, {y2})"
-    )
-    A = np.array([min(x1, x2), float(y1)], dtype=float)
-    B = np.array([max(x1, x2), float(y2)], dtype=float)
-    debug_logger.debug(
-        "[CalculateAreaBoundaryEnds] Extremos de la línea de área: "
-        f"A={A}, B={B}"
-    )
-    return A, B
 
 
 def calculate_meters_per_pixel(

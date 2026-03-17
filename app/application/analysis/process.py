@@ -8,10 +8,8 @@ from cv2.typing import MatLike
 import numpy as np
 from sqlalchemy.orm import Session
 
-import supervision as sv
-
 from app.entities.models.PlayerModels import PlayerState
-from app.entities.utils.global_values_store import GlobalValuesStore
+from app.entities.utils.global_values_store import globals
 from app.infraestructure.services.video_processing_service import extract_player_images
 from app.infraestructure.trackers.goal_scorer_detector import GoalScorerDetector
 from app.infraestructure.trackers.goal_tracker import GoalTracker
@@ -22,193 +20,206 @@ from app.infraestructure.services.bbox_processor_service import (
     calculate_area_boundary_ends,
 )
 from app.entities.utils import analysis_context
+from app.logger.process_time_reporter import ProcessTimeReporter
 from app.utils.routes import MODEL_GOALS_PATH, OUTPUT_IMAGES_DIR
 from app.logger import info_logger, error_logger, debug_logger
-from app.infraestructure.services.database import get_db_session
 
 
 
 def process_frame(
     match_id: int,
     frame_num: int,
-    video_batch: List[tuple[MatLike, float]],
+    video_batch: List[MatLike],
     db: Session,
     tracker: TrackerService,
     metrics: dict,
-    images_per_player: int,
-    saved_player_ids: List[int],
     export_data_file: Path,
-) -> tuple[int, List[int], dict]:
+    time_reporter: ProcessTimeReporter
+) -> int:
     """
     Procesa un lote de frames de video aislándolos entre sí:
     si un frame falla se ignora y se continúa con el siguiente.
     """
-    player_image_counts: dict = {}
-    last_frame_taken: dict = {}
     start_time = time.time()
-    globals = GlobalValuesStore()
     tools = analysis_context.tools
     numbers_data = defaultdict(lambda: defaultdict(float))
     info_logger.info(
         f"[ProcessRun] Iniciando procesamiento de lote de frames en timestamp {start_time}"
     )
-    errors = 0
     goal_yolo = GoalTracker(MODEL_GOALS_PATH)
     goal_scorer = GoalScorerDetector(iou_threshold=0.0, pixel_threshold=200.0)
+    
+    time_reporter.start("get object tracks")
+    tracker.get_object_tracks(video_batch, frame_num, db)
+    time_reporter.stop("get object tracks")
     try:
-        for frame, _ in video_batch:
-            with get_db_session(match_id) as db:
-                actual_time = time.time()
-                dt = actual_time - start_time
-                globals.update(timestamp=dt)
-                frame_num += 1
-                pixels_to_meters = 0.1048
-                area_boundarys = calculate_area_boundary_ends(frame)
-                if area_boundarys is not None:
-                    d_px = np.linalg.norm(area_boundarys[0] - area_boundarys[1])
-                    pixels_to_meters = float(11 / d_px)
-                debug_logger.debug(
-                    f"[ProcessRun] Factor pixels_to_meters calculado: {pixels_to_meters}"
+        for frame in video_batch:
+            actual_time = time.time()
+            dt = actual_time - start_time
+            globals.update(timestamp=dt)
+            frame_num += 1
+            pixels_to_meters = 0.1048
+            area_boundarys = calculate_area_boundary_ends(frame)
+            if area_boundarys is not None:
+                d_px = np.linalg.norm(area_boundarys[0] - area_boundarys[1])
+                pixels_to_meters = float(11 / d_px)
+            debug_logger.debug(
+                f"[ProcessRun] Factor pixels_to_meters calculado: {pixels_to_meters}"
+            )
+
+            info_logger.info(f"\n{'=' * 20} Procesando frame {frame_num} {'=' * 20}\n")
+            info_logger.info(f"Tiempo desde último frame: {dt:.4f} segundos")
+
+            # -------------------------------------------------------
+            # 1. Estimar movimiento de cámara
+            # -------------------------------------------------------
+            try:
+                info_logger.info(
+                    "[ProcessRun] Paso 1: Estimando movimiento de cámara..."
                 )
+                time_reporter.start("camera_movement_estimator")
+                camera_movement = tools.camera_movement_estimator.update(frame)
+                time_reporter.stop("camera_movement_estimator")
+            except Exception as e:
+                error_logger.error(
+                    f"[Frame {frame_num}] Error estimando movimiento de cámara: {e}"
+                )
+                raise e
 
-                print(f"\n{'=' * 20} Procesando frame {frame_num} {'=' * 20}\n")
-                print(f"Tiempo desde último frame: {dt:.4f} segundos")
+            # -------------------------------------------------------
+            # 2. TRACKING DE OBJETOS (jugadores + balón)
+            # -------------------------------------------------------
+            try:
+                info_logger.info(
+                    "[ProcessRun] Paso 2: Procesando frame en el tracker..."
+                )
+                time_reporter.start("position updater (process tracks and position)")
+                process_tracks_and_position(
+                    db=db,
+                    tracker=tracker,
+                    camera_movement=camera_movement,
+                    pixels_to_meters=pixels_to_meters,
+                )
+                time_reporter.stop("position updater (process tracks and position)")
+            except Exception as e:
+                error_logger.error(
+                    f"[Frame {frame_num}] Error en process_tracks_and_position: {e}"
+                )
+                raise e
+            
+            try:
+                last_player = tools.player_records.get_last()
 
-                # -------------------------------------------------------
-                # 1. Estimar movimiento de cámara
-                # -------------------------------------------------------
-                try:
-                    info_logger.info(
-                        "[ProcessRun] Paso 1: Estimando movimiento de cámara..."
-                    )
-                    camera_movement = tools.camera_movement_estimator.update(frame)
-                except Exception as e:
-                    error_logger.error(
-                        f"[Frame {frame_num}] Error estimando movimiento de cámara: {e}"
-                    )
-                    error = update_error(errors)
-                    if error == -1:
-                        break
-                    errors = error
+                if last_player is None:
                     continue
+                
+                bbox = last_player.get_bbox()
+                
+                if not bbox:
+                    continue
+                
+                time_reporter.start("depth_estimator")
+                depth = tools.depth_estimator.process_player_depth(
+                frame=frame, 
+                bbox=bbox, 
+                frame_num=frame_num, 
+                current_camera_scale=tools.camera_movement_estimator.get_current_scale()
+            )
+                time_reporter.stop("depth_estimator")
+            except Exception as e:
+                error_logger.error(
+                    f"[Frame {frame_num}] Error en process_tracks_and_position: {e}"
+                )
+                raise e
 
-                # -------------------------------------------------------
-                # 2. TRACKING DE OBJETOS (jugadores + balón)
-                # -------------------------------------------------------
-                try:
-                    info_logger.info(
-                        "[ProcessRun] Paso 2: Procesando frame en el tracker..."
-                    )
-                    process_tracks_and_position(
-                        frame=frame,
+            # -------------------------------------------------------
+            # 4. ESTIMAR VELOCIDAD / DISTANCIA
+            # -------------------------------------------------------
+            try:
+                info_logger.info(
+                    "[ProcessRun] Paso 4: Estimando velocidad y distancia del último jugador..."
+                )
+                last_state = tools.player_records.get_last()
+                if last_state:
+                    time_reporter.start("speed_and_distance")
+                    tools.speed_and_distance.process_track(
                         frame_num=frame_num,
-                        db=db,
-                        tracker=tracker,
-                        camera_movement=camera_movement,
+                        track_id=int(f"{last_state.player_id}"),
+                        track=last_state,
+                        depth=depth or 1.0,
                         pixels_to_meters=pixels_to_meters,
+                        camera_scale=tools.camera_movement_estimator.get_current_scale(),
+                        db=db,
+                        dt=dt,
                     )
-                except Exception as e:
-                    error_logger.error(
-                        f"[Frame {frame_num}] Error en process_tracks_and_position: {e}"
-                    )
-                    error = update_error(errors)
-                    if error == -1:
-                        break
-                    errors = error
-                    continue
-
-                # -------------------------------------------------------
-                # 4. ESTIMAR VELOCIDAD / DISTANCIA
-                # -------------------------------------------------------
-                try:
+                    time_reporter.stop("speed_and_distance")
+                else:
                     info_logger.info(
-                        "[ProcessRun] Paso 4: Estimando velocidad y distancia del último jugador..."
+                        "[ProcessRun] No hay último jugador para estimar velocidad/distancia."
                     )
-                    last_state = tools.player_records.get_last()
-                    if last_state:
-                        tools.speed_and_distance.process_track(
-                            frame_num=frame_num,
-                            track_id=int(f"{last_state.player_id}"),
-                            track=last_state,
-                            pixels_to_meters=pixels_to_meters,
-                            camera_scale=tools.camera_movement_estimator.get_current_scale(),
-                            db=db,
-                            dt=dt,
-                        )
-                    else:
-                        info_logger.info(
-                            "[ProcessRun] No hay último jugador para estimar velocidad/distancia."
-                        )
-                except Exception as e:
-                    error_logger.error(
-                        f"[Frame {frame_num}] Error estimando velocidad/distancia: {e}"
+            except Exception as e:
+                error_logger.error(
+                    f"[Frame {frame_num}] Error estimando velocidad/distancia: {e}"
+                )
+                raise e
+
+            # -------------------------------------------------------
+            # 5. ASIGNACIÓN DEL BALÓN A JUGADOR, DEPENDE DE LA EJECUCION DEL PUNTO 4
+            # -------------------------------------------------------
+            try:
+                info_logger.info("[ProcessRun] Paso 5: Asignando balón a jugador...")
+                players = tools.player_records.get_all_states()[:15]
+                ball_frames = tools.ball_records.get_all()[:15]
+                if ball_frames:
+                    time_reporter.start("assign_ball_to_player")
+                    assign_ball_to_player(
+                        ball_records=ball_frames,
+                        players=players,
+                        tools=tools,
+                        db=db,
+                        frame_index=frame_num,
+                        dt=dt,
+                        logger=info_logger,
                     )
-                    error = update_error(errors)
-                    if error == -1:
-                        break
-                    errors = error
+                    time_reporter.stop("assign_ball_to_player")
+                else:
+                    info_logger.info(
+                        "[ProcessRun] No hay frames de balón para asignar."
+                    )
+            except Exception as e:
+                error_logger.error(f"[Frame {frame_num}] Error asignando balón: {e}")
+                raise e
+
+            # -------------------------------------------------------
+            # 6. ASIGNAR EQUIPO, ACCION INDEPENDIENTE
+            # -------------------------------------------------------
+            try:
+                info_logger.info("[ProcessRun] Paso 6: Asignando equipo...")
+                state = db.query(PlayerState).order_by(PlayerState.id.desc()).first()
+
+                if state is None:
+                    info_logger.info(
+                        "[ProcessRun] No hay estado de jugador para asignar equipo."
+                    )
                     continue
 
-                # -------------------------------------------------------
-                # 5. ASIGNACIÓN DEL BALÓN A JUGADOR, DEPENDE DE LA EJECUCION DEL PUNTO 4
-                # -------------------------------------------------------
-                try:
-                    info_logger.info("[ProcessRun] Paso 5: Asignando balón a jugador...")
-                    players = tools.player_records.get_all_states()[:15]
-                    ball_frames = tools.ball_records.get_all()[:15]
-                    if ball_frames:
-                        assign_ball_to_player(
-                            ball_records=ball_frames,
-                            players=players,
-                            tools=tools,
-                            db=db,
-                            frame_index=frame_num,
-                            dt=dt,
-                        )
-                    else:
-                        info_logger.info(
-                            "[ProcessRun] No hay frames de balón para asignar."
-                        )
-                except Exception as e:
-                    error_logger.error(f"[Frame {frame_num}] Error asignando balón: {e}")
-                    error = update_error(errors)
-                    if error == -1:
-                        break
-                    errors = error
-                    continue
-
-                # -------------------------------------------------------
-                # 6. ASIGNAR EQUIPO, ACCION INDEPENDIENTE
-                # -------------------------------------------------------
-                try:
-                    info_logger.info("[ProcessRun] Paso 6: Asignando equipo...")
-                    state = db.query(PlayerState).order_by(PlayerState.id.desc()).first()
-
-                    if state is None:
-                        info_logger.info(
-                            "[ProcessRun] No hay estado de jugador para asignar equipo."
-                        )
-                        continue
-
-                    last_state = tools.player_records.get_last()
-                    if last_state:
-                        tools.team_assigner.assign_team_colors(
-                            frame=frame, players=tools.player_records.get_all_states()
-                        )
-                        tools.team_assigner.get_player_team(
-                            frame=frame, frame_num=frame_num, record=last_state, db=db
-                        )
-                    else:
-                        info_logger.info(
-                            "[ProcessRun] No hay último jugador para asignar equipo."
-                        )
-                except Exception as e:
-                    error_logger.error(f"[Frame {frame_num}] Error asignando equipo: {e}")
-                    error = update_error(errors)
-                    if error == -1:
-                        break
-                    errors = error
-                    continue
+                last_state = tools.player_records.get_last()
+                if last_state:
+                    time_reporter.start("team assigner")
+                    tools.team_assigner.assign_team_colors(
+                        frame=frame, players=tools.player_records.get_all_states()
+                    )
+                    tools.team_assigner.get_player_team(
+                        frame=frame, frame_num=frame_num, record=last_state, db=db
+                    )
+                    time_reporter.stop("team assigner")
+                else:
+                    info_logger.info(
+                        "[ProcessRun] No hay último jugador para asignar equipo."
+                    )
+            except Exception as e:
+                error_logger.error(f"[Frame {frame_num}] Error asignando equipo: {e}")
+                raise e
 
             try:
                 info_logger.info("[ProcessRun] Iniciando el reconocimiento del numero del jugador")
@@ -216,6 +227,7 @@ def process_frame(
                 info_logger.info("[ProcessRun] Ultimo estado del jugador obtenido")
                 if last_state is not None and last_state.get_bbox() is not None:
                     player_id = int(f"{last_state.player_id}")
+                    time_reporter.start("number recognizer")
                     crop = tools.number_recognizer._crop_dorsal_region(
                         frame, last_state.get_bbox() # type: ignore
                     )
@@ -249,6 +261,7 @@ def process_frame(
                             tools.number_recognizer.flush_buffer(tools.trocr_buffer)
                     
                     player_numbers = numbers_data.get(player_id, {})
+                    time_reporter.stop("number recognizer")
                     if not player_numbers:
                         info_logger.info(
                             f"[ProcessRun] No se encontraron números para reconocer al jugador {player_id}."
@@ -276,101 +289,95 @@ def process_frame(
                     info_logger.info("[ProcessRun] No hay último jugador para reconocer número.")
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error reconociendo número de jugador: {e}")
+                raise e
 
-                # -------------------------------------------------------
-                # 7. EXTRAER IMÁGENES
-                # -------------------------------------------------------
-                try:
+
+            try:
+                time_reporter.start("goal scorer")
+                detections  = goal_yolo.predict(frame)
+                goal_detected, scorer_player_id = goal_scorer.updateScorer(
+                    db=db,
+                    detections=detections,
+                    match_id=match_id,
+                    frame_num=frame_num
+                )
+                time_reporter.stop("goal scorer")
+                
+                info_logger.info(
+                    f"[Frame {frame_num}] Se detectaron {goal_detected} goles del jugador {scorer_player_id}."
+                )
+            except:
+                raise Exception("Error al reconocer el Arco y detectar goles.") 
+
+            # -------------------------------------------------------
+            # 7. EXTRAER IMÁGENES
+            # -------------------------------------------------------
+            try:
+                info_logger.info(
+                    "[ProcessRun] Paso 7: Extrayendo imágenes de jugadores..."
+                )
+                last_state = tools.player_records.get_last()
+                last_player = (
+                    tools.player_records.get_player(int(f"{last_state.player_id}"))
+                    if last_state
+                    else None
+                )
+                if not last_state and not last_player:
                     info_logger.info(
-                        "[ProcessRun] Paso 7: Extrayendo imágenes de jugadores..."
+                        "[ProcessRun] No hay jugador para extraer imágenes, se continúa."
                     )
-                    last_state = tools.player_records.get_last()
-                    last_player = (
-                        tools.player_records.get_player(int(f"{last_state.player_id}"))
-                        if last_state
-                        else None
-                    )
-                    if not last_state and not last_player:
-                        info_logger.info(
-                            "[ProcessRun] No hay jugador para extraer imágenes, se continúa."
-                        )
-                        continue
+                    continue
+                
+                time_reporter.start("extract player images")
+                extract_player_images(
+                    frame=frame,
+                    frame_index=frame_num,
+                    player_state=last_state,
+                    player=last_player,
+                    output_folder=OUTPUT_IMAGES_DIR.as_posix(),
+                )
+                time_reporter.stop("extract player images")
 
-                    updated_counts, updated_last, saved_id = extract_player_images(
-                        frame=frame,
-                        frame_index=frame_num,
-                        player_state=last_state,
-                        player=last_player,
-                        images_per_player=images_per_player,
-                        output_folder=OUTPUT_IMAGES_DIR.as_posix(),
-                        player_image_counts=player_image_counts,
-                        last_frame_taken=last_frame_taken,
-                    )
-                    info_logger.info(
-                        f"[Frame {frame_num}] Imágenes de jugador extraídas correctamente."
-                    )
-                    debug_logger.debug(
-                        "[ProcessRun] Objetos devueltos por extract_player_images: "
-                        f"counts={updated_counts}, last_frame_taken={updated_last}, saved_id={saved_id}"
-                    )
-                    player_image_counts.update(updated_counts)  # type: ignore
-                    last_frame_taken.update(updated_last)  # type: ignore
-                    if saved_id is not None:
-                        saved_player_ids.append(saved_id)
+                info_logger.info(
+                    f"[Frame {frame_num}] Imágenes de jugador extraídas correctamente."
+                )
+            except Exception as e:
+                error_logger.error(
+                    f"[Frame {frame_num}] Error extrayendo imágenes: {e}"
+                )
+                raise e
 
-                    if all(
-                        count >= images_per_player for count in player_image_counts.values()
-                    ):
-                        debug_logger.debug(
-                            "[ProcessRun] Se han alcanzado las imágenes requeridas para todos "
-                            "los jugadores. Limpiando last_frame_taken."
-                        )
-                        last_frame_taken.clear()
-                except Exception as e:
-                    error_logger.error(
-                        f"[Frame {frame_num}] Error extrayendo imágenes: {e}"
-                    )
-                    error = update_error(errors)
-                    if error == -1:
-                        break
-                    errors = error
-                # -------------------------------------------------------
-                # 8. EXPORTAR DATOS DEL FRAME, accion independiente
-                # -------------------------------------------------------
-                try:
-                    info_logger.info("[ProcessRun] Paso 8: Exportando datos del frame...")
-                    last_state = tools.player_records.get_last()
-                    ball_frame = tools.ball_records.get_last()
-                    snapshot = tracemalloc.take_snapshot()
-                    total_mem = sum(stat.size for stat in snapshot.statistics("lineno")) / (
-                        1024 * 1024
-                    )
-                    export_data = {
-                        "frame_num": frame_num,
-                        "frame_time": f"{dt:.4f} seconds",
-                        "metrics": metrics.copy(),
-                        "player_image_counts": player_image_counts.copy(),
-                        "last_frame_taken": last_frame_taken.copy(),
-                        "saved_player_ids": saved_player_ids.copy(),
-                        "player_data": last_state.to_dict() if last_state else None,
-                        "ball_data": ball_frame.to_dict() if ball_frame else None,
-                        "memory_usage_mb": total_mem if "total_mem" in locals() else None,
-                    }
-                    export_data_file.write_text(
-                        json.dumps(export_data, ensure_ascii=False) + "\n", encoding="utf-8"
-                    )
-                except Exception as e:
-                    error_logger.error(
-                        f"[Frame {frame_num}] Error escribiendo exportación: {e}"
-                    )
-                    error = update_error(errors)
-                    if error == -1:
-                        break
-                    errors = error
+            # -------------------------------------------------------
+            # 8. EXPORTAR DATOS DEL FRAME, accion independiente
+            # -------------------------------------------------------
+            try:
+                info_logger.info("[ProcessRun] Paso 8: Exportando datos del frame...")
+                last_state = tools.player_records.get_last()
+                ball_frame = tools.ball_records.get_last()
+                snapshot = tracemalloc.take_snapshot()
+                total_mem = sum(stat.size for stat in snapshot.statistics("lineno")) / (
+                    1024 * 1024
+                )
+                export_data = {
+                    "frame_num": frame_num,
+                    "frame_time": f"{dt:.4f} seconds",
+                    "metrics": metrics.copy(),
+                    "player_data": last_state.to_dict() if last_state else None,
+                    "ball_data": ball_frame.to_dict() if ball_frame else None,
+                    "memory_usage_mb": total_mem if "total_mem" in locals() else None,
+                }
+                export_data_file.write_text(
+                    json.dumps(export_data, ensure_ascii=False) + "\n", encoding="utf-8"
+                )
+            except Exception as e:
+                error_logger.error(
+                    f"[Frame {frame_num}] Error escribiendo exportación: {e}"
+                )
+                raise e
 
-                print(f"[Frame {frame_num}] procesado correctamente.")
+            info_logger.info(f"[Frame {frame_num}] procesado correctamente.")
 
-        return frame_num, saved_player_ids, metrics
+        return frame_num
 
     except Exception as e:
         error_logger.error(f"Error fuera del loop de frames: {e}")

@@ -31,7 +31,6 @@ class ViewTransformer:
             dtype=np.float32,
         )
 
-        # Corregir contorno para pointPolygonTest
         self.pixel_vertices_contour = self.pixel_vertices.reshape((-1, 1, 2))
 
         # Mapa de proyección destino en metros
@@ -62,28 +61,24 @@ class ViewTransformer:
         x, y = float(point_xy[0]), float(point_xy[1])
         point_int = (int(x), int(y))
 
-        # Validación: fuera del campo
         if cv2.pointPolygonTest(self.pixel_vertices_contour, point_int, False) < 0:
             return None
 
-        # OpenCV requiere shape (1,1,2)
         p = np.array([[[x, y]]], dtype=np.float32)
 
         warped = cv2.perspectiveTransform(p, self.perspective_transform)
+        
+        info_logger.info(f"[ViewTransformer] Punto transformado: {warped}")
 
-        return warped.reshape(2).tolist()  # [x,y] en metros
-
-    # ---------------------------------------------------------
-    # INTEGRACIÓN CON RECORD COLLECTION BASE
-    # ---------------------------------------------------------
+        return warped.reshape(2).tolist()
 
     def add_transformed_positions(self, db: Session):
         """
-        Ajusta la posición del balón y los jugadores en cada frame.
-        Luego de una base de datos, transforma los registros de balón y jugadores.
-        Si hay registros de balón pero no de jugadores, solo transforma los registros de balón.
-        Si hay registros de jugadores pero no de balón, solo transforma los registros de jugadores.
-        Si no hay registros de balón ni de jugadores, no hace nada.
+            Ajusta la posición del balón y los jugadores en cada frame.
+            Luego de una base de datos, transforma los registros de balón y jugadores.
+            Si hay registros de balón pero no de jugadores, solo transforma los registros de balón.
+            Si hay registros de jugadores pero no de balón, solo transforma los registros de jugadores.
+            Si no hay registros de balón ni de jugadores, no hace nada.
         """
         ball_collection = TrackCollectionBall(db)
         player_collection = TrackCollectionPlayer(db)
@@ -91,16 +86,8 @@ class ViewTransformer:
         info_logger.info("[ViewTransformer] Transformando posiciones en registros...")
         ball_register = ball_collection.get_last()
         player_register = player_collection.get_last()
-        info_logger.info(f"[ViewTransformer] ball_register: {ball_register.to_dict() if ball_register is not None else None}")
-        info_logger.info(f"[ViewTransformer] player_register: {player_register.to_dict() if player_register is not None else None}")
 
         try:
-            info_logger.info(
-                f"[ViewTransformer] Registro de balon extraido: {ball_register is not None}"
-            )
-            info_logger.info(
-                f"[ViewTransformer] Registro de jugador extraido: {player_register is not None}"
-            )
             if ball_register is not None:
                 debug_logger.debug(
                     "[ViewTransformer] Calculando posición transformada del balon, datos del balon "
@@ -117,13 +104,10 @@ class ViewTransformer:
                 self.calculate_player_transformed_position(
                     player_record=player_register, db=db
                 )
-
-            info_logger.info("[ViewTransformer] No hay registros para transformar.")
         except Exception as e:
             error_logger.error(
                 f"[ViewTransformer] Error transformando posiciones en records: {e}"
             )
-            error_logger.error(f"[ViewTransformer] Detalles: extraidos ball register: ${ball_register.to_dict() if ball_register is not None else None}, player register: ${player_register.to_dict() if player_register is not None else None}")
             raise e
 
     def calculate_ball_transformed_position(
