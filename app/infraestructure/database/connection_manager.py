@@ -27,7 +27,7 @@ class ConnectionManager():
         Returns:
             Session: Sesión de base de datos.
         """
-        return Session()
+        return Session(self.engine, expire_on_commit=False, autoflush=False)
         
     def close_session(self):
         """
@@ -50,6 +50,7 @@ class ConnectionManager():
         Args:
             match_id (int): ID del partido para el que se crea la base de datos.
         """
+        from app.entities.models import Player, PlayerState, BallEventModel, HeatmapPointModel
         db_path = DATABASE_DIR / f"temp_db_{match_id}.sqlite"
         self.engine = create_engine(
             f"{self.DATABASE_URL}{db_path.as_posix()}",

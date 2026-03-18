@@ -42,6 +42,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
     )
     
     db = globals.connection_manager.create_session()
+    globals.session = db
 
     metrics = {
         "processing_time": [],
@@ -129,7 +130,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
             #     debug_logger.debug("Tiempo de procesamiento excedido, finalizando.")
             #     break
             
-            if frame_num > 2000 and DEBUG:
+            if frame_num > 500 and DEBUG:
                 break
             
             progress.update(len(batch))

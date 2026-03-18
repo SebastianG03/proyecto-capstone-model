@@ -21,7 +21,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return self.db.query(PlayerState).order_by(PlayerState.id.desc()).first()
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error al refrescar la sesión de PlayerState: {ie}")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             last = self.db.query(PlayerState).order_by(PlayerState.id.desc()).first()
             return last
@@ -40,7 +39,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             )
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error al refrescar la sesión de PlayerState: {ie}")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             last = (
                 self.db
@@ -77,7 +75,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return value[0]
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error al refrescar la sesión de Player para obtener ID: {ie}")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             query = (self.db.query(Player.id).filter(Player.player_id == player_id)).first()
             if not query:
@@ -99,7 +96,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             )
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error al refrescar la sesión de PlayerState para obtener estados: {ie}")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             states = (
                 self.db
@@ -127,7 +123,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return np_states.sum()
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error al refrescar la sesión de PlayerState para calcular distancia total: {ie}")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             player_states = (
                 self.db
@@ -175,7 +170,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             ).first()
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error de consulta al obtener registro para frame: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             record = self.get_record_for_frame(track_id, frame_index)
             return record
@@ -192,14 +186,35 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return self.db.query(PlayerState).order_by(PlayerState.frame_index.asc()).all()
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error de consulta al obtener todos los estados de jugadores: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             states = self.db.query(PlayerState).order_by(PlayerState.frame_index.asc()).all()
             return states
         except Exception as e:
             error_logger.error(f"[PlayerDBError] Error al obtener todos los estados de jugadores: {e}")
             raise e
-        
+    def _get_previous_state(self, player_id: int, frame_index: int) -> PlayerState | None:
+            if frame_index < 30:
+                return None
+            return (
+                self.db
+                .query(PlayerState)
+                .filter(PlayerState.player_id == player_id)
+                .filter(PlayerState.frame_index < frame_index - 30)
+                .order_by(PlayerState.frame_index.desc())
+            ).first()
+    
+    def get_previous_state(self, player_id: int, frame_index: int) -> PlayerState | None:
+        try:
+            return self._get_previous_state(player_id, frame_index)
+        except InvalidRequestError as ie:
+            error_logger.error(f"[PlayerDBError] Error de consulta al obtener estado previo: {ie}, iniciando refresco de la sesión y reintentando.")
+            self.db = globals.connection_manager.create_session()
+            state = self._get_previous_state(player_id, frame_index)
+            return state
+        except Exception as e:
+            error_logger.error(f"[PlayerDBError] Error al obtener estado previo: {e}")
+            raise e
+    
     def _patch_state(self, player_id: int, frame_index: int, updates: dict):
         print(f"Actualizando registro ID {player_id} con {updates}")
         obj = (
@@ -229,7 +244,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return obj
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error de consulta al actualizar registro: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             state = self._patch_state(player_id, frame_index, updates)
             return state
@@ -239,8 +253,8 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return None
         finally:
             error_logger.info(
-                "Elementos actuales en base de datos PlayerState: ",
-                len(self.get_all_states()),
+                f"Elementos actuales en base de datos PlayerState: {len(self.get_all_states())}"
+
             )
             
     def _post_state(self, obj_data: dict):
@@ -256,7 +270,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return self._post_state(obj_data)
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error de consulta al crear registro de estado: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             state = self._post_state(obj_data)
             return state
@@ -284,7 +297,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return self._post(obj_data)
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error de consulta al crear registro de jugador: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             player = self._post(obj_data)
             return player
@@ -317,7 +329,6 @@ class TrackCollectionPlayer(RecordCollectionBase):
             return self._path(obj_id, updates)
         except InvalidRequestError as ie:
             error_logger.error(f"[PlayerDBError] Error de consulta al actualizar registro de jugador: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             player = self._path(obj_id, updates)
             return player

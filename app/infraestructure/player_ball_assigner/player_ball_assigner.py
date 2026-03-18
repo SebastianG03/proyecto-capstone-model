@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import numpy as np
 from app.entities.collections import TrackCollectionPlayer
 from app.entities.models.BallState import BallEventModel
+from app.entities.utils.tools_context import analysis_context
 from app.infraestructure.player_ball_assigner.ball_assigner import BallAssigner
 from app.entities.models.PlayerModels import PlayerState
 
@@ -43,31 +44,21 @@ class PlayerBallAssigner:
             if not ball_event or ball_event.x is None or ball_event.y is None:
                 return -1
 
-            # Calcular velocidades reales basadas en posiciones consecutivas
             players_dict = []
             for p in players:
+                vx, vy = 0.0, 0.0
                 if p.x is not None and p.y is not None:
-                    # Calcular velocidad real si hay datos históricos
-                    vx, vy = 0.0, 0.0
-                    if (
-                        hasattr(p, "prev_x")
-                        and hasattr(p, "prev_y")
-                        and p.prev_x is not None
-                        and p.prev_y is not None
-                    ):
-                        vx = (p.x - p.prev_x) / dt if dt > 0 else 0.0
-                        vy = (p.y - p.prev_y) / dt if dt > 0 else 0.0
-                    elif p.speed is not None and float(f"{p.speed}") > 0:
-                        # Usar dirección anterior si existe
-                        if (
-                            hasattr(p, "prev_direction")
-                            and p.prev_direction is not None
-                        ):
-                            vx = p.speed * np.cos(p.prev_direction)
-                            vy = p.speed * np.sin(p.prev_direction)
-                        else:
-                            vx = p.speed * 0.5  # Dirección por defecto
-                            vy = p.speed * 0.5
+                    prev_player_state = analysis_context.tools.player_records.get_previous_state(int(f'{p.player_id}'), frame_number)
+                    xo = (float(f"{p.x}") * scale, float(f"{p.y}") * scale)
+
+                    if prev_player_state is not None and prev_player_state.x is not None and prev_player_state.y is not None:
+                        xf = (float(f"{prev_player_state.x}") * scale, float(f"{prev_player_state.y}") * scale)
+
+                        delta_x = np.array([xo[0] - xf[0], xo[1] - xf[1]])
+                        vo = delta_x / dt
+                        accelaration = (2 * (delta_x - vo * dt)) / dt ** 2
+                        vf = vo + accelaration * dt
+                        vx, vy = vf[0], vf[1]
 
                     players_dict.append({
                         "id": int(f"{p.id}"),
@@ -99,7 +90,6 @@ class PlayerBallAssigner:
                 frame_number=frame_number,
             )
 
-            # Actualizar estados de jugadores
             for player in players:
                 is_owner = int(f"{player.player_id}") == owner_id
                 possession_time = self.ball_assigner.get_possession_time(

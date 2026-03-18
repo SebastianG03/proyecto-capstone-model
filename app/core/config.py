@@ -24,7 +24,7 @@ MAX_PROCESSING_TIME = config("MAX_PROCESSING_TIME", default=-1, cast=int)
 DOWNLOAD_MODEL_URL = str(config("DOWNLOAD_MODEL_URL"))
 USE_PARALLEL_IO = config("USE_PARALLEL_IO", default=True, cast=bool)
 MODEL_USE_HALF_PRECISION = config("MODEL_USE_HALF_PRECISION", default=False, cast=bool)
-BATCH_SIZE = config("BATCH_SIZE", default=16, cast=int)
+BATCH_SIZE = config("BATCH_SIZE", default=30, cast=int)
 
 # MODELS    
 BALL_MODEL_NAME = str(config("BALL_MODEL_NAME"))

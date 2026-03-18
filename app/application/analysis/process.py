@@ -168,7 +168,7 @@ def process_frame(
             # -------------------------------------------------------
             try:
                 info_logger.info("[ProcessRun] Paso 5: Asignando balón a jugador...")
-                players = tools.player_records.get_all_states()[:15]
+                players = tools.player_records.get_all_states()[:50]
                 ball_frames = tools.ball_records.get_all()[:15]
                 if ball_frames:
                     time_reporter.start("assign_ball_to_player")
@@ -178,6 +178,8 @@ def process_frame(
                         tools=tools,
                         db=db,
                         frame_index=frame_num,
+                        depth=depth or 1.0,
+                        pixels_to_meters=pixels_to_meters,
                         dt=dt,
                         logger=info_logger,
                     )

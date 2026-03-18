@@ -20,7 +20,6 @@ class TrackCollectionBall(RecordCollectionBase):
             return self.db.query(BallEventModel).order_by(BallEventModel.id.desc()).first()
         except InvalidRequestError as ie:
             error_logger.error(f"[DBError] Error de consulta al obtener último registro de BallEventModel: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             return self.db.query(BallEventModel).order_by(BallEventModel.id.desc()).first()
         except Exception as e:
@@ -45,7 +44,6 @@ class TrackCollectionBall(RecordCollectionBase):
             return item
         except InvalidRequestError as ie:
             error_logger.error(f"[DBError] Error de consulta al obtener registro para frame: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             return (
                 self.db
@@ -67,7 +65,6 @@ class TrackCollectionBall(RecordCollectionBase):
             )
         except InvalidRequestError as ie:
             error_logger.error(f"[DBError] Error de consulta al obtener todos los registros de BallEventModel: {ie}, iniciando refresco de la sesión y reintentando.")
-            self.db.rollback()
             self.db = globals.connection_manager.create_session()
             return (
                 self.db

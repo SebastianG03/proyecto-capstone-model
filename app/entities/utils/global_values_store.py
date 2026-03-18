@@ -1,5 +1,7 @@
 from typing import Optional
 
+from sqlalchemy.orm import Session
+
 from app.entities.utils.singleton import Singleton
 from app.infraestructure.database.connection_manager import ConnectionManager
 
@@ -24,6 +26,7 @@ class GlobalValuesStore(metaclass=Singleton):
         self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24  # fps
         self.MIN_DT_S = 1.0 / (2 * 24)
         self._connection_manager: ConnectionManager
+        self._session: Session
 
     # --- Getters ---
     @property
@@ -63,6 +66,14 @@ class GlobalValuesStore(metaclass=Singleton):
     @connection_manager.setter
     def connection_manager(self, connection_manager: ConnectionManager) -> None:
         self._connection_manager = connection_manager
+    
+    @property
+    def session(self) -> Session:
+        return self._session
+    
+    @session.setter
+    def session(self, session: Session) -> None:
+        self._session = session
     
 
     # --- Setters individuales ---
