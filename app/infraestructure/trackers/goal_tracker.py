@@ -51,9 +51,7 @@ class GoalTracker:
 
         detections = sv.Detections.from_ultralytics(results[0])
 
-        target_names = {"soccer-ball", "soccer-goal"}
-        mask = np.isin(detections.data["class_name"], list(target_names))
-        return detections[mask]
+        return detections
 
     def annotate(self, frame: np.ndarray, detections: sv.Detections) -> np.ndarray:
         if len(detections) == 0:

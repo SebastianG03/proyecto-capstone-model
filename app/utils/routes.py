@@ -10,13 +10,18 @@ OUTPUT_IMAGES_DIR = BASE_RES_DIR / "output_images"
 OUTPUT_REPORTS_DIR = BASE_RES_DIR / "output_reports"
 INPUT_VIDEOS_DIR = BASE_RES_DIR / "input_videos"
 DATABASE_DIR = BASE_RES_DIR / "database"
-
+ANOTATED_VIDEOS_DIR = OUTPUT_VIDEOS_DIR / "anotated"
+ANOTATED_OUTPUT_IMAGES = OUTPUT_IMAGES_DIR / "anotated_images"
+METRICS_DIR = OUTPUT_REPORTS_DIR / "metrics"
+DETECTED_OBJECTS_METRICS_DIR = OUTPUT_REPORTS_DIR / "detected_objects_metrics"
+MEMORY_TRACKER_DIR = OUTPUT_REPORTS_DIR / "memory_tracker"
 MODELS_DIR = BASE_RES_DIR / "models"
 BALL_MODEL_PATH = MODELS_DIR / BALL_MODEL_NAME
 PLAYER_MODEL_PATH = MODELS_DIR / PLAYER_MODEL_NAME
 MODEL_GOALS_PATH = MODELS_DIR / GOAL_MODEL_NAME
 TROCR_PATH = MODELS_DIR / "trocr"
 DEPTH_MODEL_PATH = MODELS_DIR / DEPTH_MODEL_NAME
+
 
 def ensure_directories():
     """
@@ -30,6 +35,11 @@ def ensure_directories():
         INPUT_VIDEOS_DIR,
         OUTPUT_REPORTS_DIR,
         DATABASE_DIR,
+        ANOTATED_VIDEOS_DIR,
+        ANOTATED_OUTPUT_IMAGES,
+        METRICS_DIR,
+        MEMORY_TRACKER_DIR,
+        DETECTED_OBJECTS_METRICS_DIR
     ]:
         if not directory.exists():
             directory.mkdir(parents=True, exist_ok=True)

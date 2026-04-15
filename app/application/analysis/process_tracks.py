@@ -3,7 +3,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.infraestructure.trackers.tracker_service import TrackerService
-from app.entities.utils.tools_context import analysis_context
+import app.entities.utils.tools_context as context 
 from app.logger import get_logger
 
 logger = get_logger(logging.DEBUG)
@@ -14,7 +14,7 @@ def process_tracks_and_position(
     camera_movement: tuple[float, float],
     pixels_to_meters: float,
 ):
-    tools = analysis_context.tools
+    tools = context.analysis_context.tools
     logger.info("Procesando tracks y posiciones...")
     try:
         for collection in (tools.player_records, tools.ball_records):

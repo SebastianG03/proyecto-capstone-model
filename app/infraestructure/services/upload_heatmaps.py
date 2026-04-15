@@ -2,9 +2,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List
 
-from app.entities.utils.tools_context import AnalysisContext
+import app.entities.utils.tools_context as context 
 from app.infraestructure.services.upload_service import upload_file
-from app.utils.routes import OUTPUT_VIDEOS_DIR
 from sqlalchemy.orm import Session
 from app.logger import debug_logger, info_logger
 from app.core.config import DEBUG
@@ -26,7 +25,7 @@ def upload_heatmaps_for_extracted_players(
     claves como valores correspondientes a los nombres de los archivos subidos en
     AWS S3.
     """
-    heatmaps = AnalysisContext().tools.heatmap_points.get_all()
+    heatmaps = context.analysis_context.tools.heatmap_points.get_all()
     files_in_folder: List[Path] = [Path(f'{map.path}') for map in heatmaps if Path(f'{map.path}').is_file()] 
     print(f"Archivos encontrados en players: {[f.name for f in files_in_folder]}")
 
@@ -71,8 +70,8 @@ def upload_heatmaps_for_extracted_players(
                     key = fut.result()
                     if key:
                         debug_logger.debug(f"[UPLOAD HEATMAP] Heatmap subido: {key}")
-                        heatmap = AnalysisContext().tools.heatmap_points.get_by_player_id(int(key["player_id"]))
-                        AnalysisContext().tools.heatmap_points.patch(
+                        heatmap = context.analysis_context.tools.heatmap_points.get_by_player_id(int(key["player_id"]))
+                        context.analysis_context.tools.heatmap_points.patch(
                             int(f'{heatmap.id}'),
                             {"path": key["key"]})
                         debug_logger.debug(f"[UPLOAD HEATMAP] Heatmap actualizado: {key}")

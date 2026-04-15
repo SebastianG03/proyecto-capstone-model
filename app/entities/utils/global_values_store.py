@@ -1,17 +1,19 @@
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.entities.utils.singleton import Singleton
-from app.infraestructure.database.connection_manager import ConnectionManager
+import app.entities.utils.singleton as singleton
+import app.entities.models.detected_object_data as detected_object_data
+import app.infraestructure.database.connection_manager as connection
+import app.entities.services.video_anotator as anotator
 
 
-class GlobalValuesStore(metaclass=Singleton):
+class GlobalValuesStore(metaclass=singleton.Singleton):
     """
     Almacena y permite actualizar dos valores: timestamp (float) y fps (float).
     """
 
-    def __init__(self, timestamp: float = 0.0, fps: float = 0.0) -> None:
+    def __init__(self, timestamp: float = 0.0, fps: float = 24.0) -> None:
         """
         Inicializa la clase GlobalValuesStore.
 
@@ -25,8 +27,17 @@ class GlobalValuesStore(metaclass=Singleton):
         self.MAX_ACCEL_MS2 = 6.0
         self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24  # fps
         self.MIN_DT_S = 1.0 / (2 * 24)
-        self._connection_manager: ConnectionManager
+        self._connection_manager: connection.ConnectionManager
         self._session: Session
+        self._frame_size = (1280, 720)
+        self.anotated_colors = {
+            "player": (56,226,235),
+            "ball": (235,79,22),
+            "goal": (19,102,12)
+        }
+        self._depth = 1
+        self._video_anotator: anotator.VideoAnotator
+        self._detected_object: List[detected_object_data.DetectedObjectData] = []
 
     # --- Getters ---
     @property
@@ -60,11 +71,11 @@ class GlobalValuesStore(metaclass=Singleton):
         return self.MIN_DT_S
     
     @property
-    def connection_manager(self) -> ConnectionManager:
+    def connection_manager(self) -> connection.ConnectionManager:
         return self._connection_manager
     
     @connection_manager.setter
-    def connection_manager(self, connection_manager: ConnectionManager) -> None:
+    def connection_manager(self, connection_manager: connection.ConnectionManager) -> None:
         self._connection_manager = connection_manager
     
     @property
@@ -74,6 +85,14 @@ class GlobalValuesStore(metaclass=Singleton):
     @session.setter
     def session(self, session: Session) -> None:
         self._session = session
+    
+    @property
+    def depth(self) -> float:
+        return self._depth
+    
+    @depth.setter
+    def depth(self, value: float) -> None:
+        self._depth = value
     
 
     # --- Setters individuales ---
@@ -86,6 +105,32 @@ class GlobalValuesStore(metaclass=Singleton):
     def fps(self, value: float) -> None:
         """Actualiza los fps."""
         self._fps = float(value)
+    
+    @property
+    def frame_size(self) -> tuple:
+        return self._frame_size
+
+    @frame_size.setter
+    def frame_size(self, value: tuple) -> None:
+        self._frame_size = value
+    
+    @property
+    def video_anotator(self) -> anotator.VideoAnotator:
+        return self._video_anotator
+    
+    @video_anotator.setter
+    def video_anotator(self, value: anotator.VideoAnotator) -> None:
+        self._video_anotator = value
+    
+    @property
+    def detected_object(self) -> List[detected_object_data.DetectedObjectData]:
+        return self._detected_object
+    
+    def add_detected_object(self, value: detected_object_data.DetectedObjectData) -> None:
+        self._detected_object.append(value)
+        
+    def reset_detected_object(self) -> None:
+        self._detected_object.clear()
 
     # --- Actualización simultánea ---
     def update(
@@ -99,15 +144,14 @@ class GlobalValuesStore(metaclass=Singleton):
             self._timestamp = float(timestamp)
         if fps is not None:
             self._fps = float(fps)
-            self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24
-            self.MIN_DT_S = 1.0 / (2 * 24)
+            self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / self._fps
+            self.MIN_DT_S = 1.0 / (2 * self._fps)
             
     def reset(self) -> None:
         self._timestamp = 0.0
         self._fps = 0.0
-        self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / 24
-        self.MIN_DT_S = 1.0 / (2 * 24)
-        
+        self.MAX_DIST_PER_FRAME_M = self.MAX_HUMAN_SPEED_KMH / 3.6 / self._fps
+        self.MIN_DT_S = 1.0 / (2 * self._fps)
 
     def __repr__(self) -> str:
         return (

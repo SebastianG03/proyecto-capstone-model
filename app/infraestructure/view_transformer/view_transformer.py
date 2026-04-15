@@ -80,8 +80,8 @@ class ViewTransformer:
             Si hay registros de jugadores pero no de balón, solo transforma los registros de jugadores.
             Si no hay registros de balón ni de jugadores, no hace nada.
         """
-        ball_collection = TrackCollectionBall(db)
-        player_collection = TrackCollectionPlayer(db)
+        ball_collection = TrackCollectionBall()
+        player_collection = TrackCollectionPlayer()
 
         info_logger.info("[ViewTransformer] Transformando posiciones en registros...")
         ball_register = ball_collection.get_last()
@@ -146,7 +146,7 @@ class ViewTransformer:
                     "[ViewTransformer] Posición transformada es None, fuera del campo."
                 )
                 return
-            ball_collection = TrackCollectionBall(db)
+            ball_collection = TrackCollectionBall()
             ball_collection.patch(
                 int(f"{ball_record.id}"),
                 {
@@ -223,7 +223,7 @@ class ViewTransformer:
                     "[ViewTransformer] Posición transformada es None, fuera del campo."
                 )
                 return
-            player_collection = TrackCollectionPlayer(db)
+            player_collection = TrackCollectionPlayer()
             player_collection.patch_state(
                 int(f"{player_record.player_id}"),
                 int(f"{player_record.frame_index}"),

@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 import numpy as np
 from app.entities.collections import TrackCollectionPlayer
 from app.entities.models.BallState import BallEventModel
-from app.entities.utils.tools_context import analysis_context
+import app.entities.utils.tools_context as context 
 from app.infraestructure.player_ball_assigner.ball_assigner import BallAssigner
 from app.entities.models.PlayerModels import PlayerState
-
+from app.logger.logger import info_logger
 
 class PlayerBallAssigner:
     def __init__(
@@ -48,16 +48,16 @@ class PlayerBallAssigner:
             for p in players:
                 vx, vy = 0.0, 0.0
                 if p.x is not None and p.y is not None:
-                    prev_player_state = analysis_context.tools.player_records.get_previous_state(int(f'{p.player_id}'), frame_number)
-                    xo = (float(f"{p.x}") * scale, float(f"{p.y}") * scale)
+                    prev_player_state = context.analysis_context.tools.player_records.get_previous_state(int(f'{p.player_id}'), frame_number)
+                    xf = (float(f"{p.x}") * scale, float(f"{p.y}") * scale)
 
                     if prev_player_state is not None and prev_player_state.x is not None and prev_player_state.y is not None:
-                        xf = (float(f"{prev_player_state.x}") * scale, float(f"{prev_player_state.y}") * scale)
+                        xo = (float(f"{prev_player_state.x}") * scale, float(f"{prev_player_state.y}") * scale)
 
                         delta_x = np.array([xo[0] - xf[0], xo[1] - xf[1]])
                         vo = delta_x / dt
-                        accelaration = (2 * (delta_x - vo * dt)) / dt ** 2
-                        vf = vo + accelaration * dt
+                        acceleration = (2 * (delta_x - vo * dt)) / dt ** 2
+                        vf = vo + acceleration * dt
                         vx, vy = vf[0], vf[1]
 
                     players_dict.append({
@@ -80,6 +80,8 @@ class PlayerBallAssigner:
                 "vx": float(f"{ball_event.vx}") if ball_event.vx is not None else 0.0,
                 "vy": float(f"{ball_event.vy}") if ball_event.vy is not None else 0.0,
             }
+            
+            info_logger.info(f"[PlayerBallAssigner] Jugadores en frame: {players_dict}")
 
             owner_id = self.ball_assigner.update(
                 ball_state=ball_state,
@@ -103,8 +105,8 @@ class PlayerBallAssigner:
                     "ball_y": float(f"{ball_event.y}"),
                     "ball_possession_time": possession_time,
                 }
-                player_record = TrackCollectionPlayer(db)
-                player_record.patch(int(f"{player.id}"), payload)
+                player_record = TrackCollectionPlayer()
+                player_record.patch(int(f"{player.player_id}"), payload)
 
             return owner_id if owner_id is not None else -1
 

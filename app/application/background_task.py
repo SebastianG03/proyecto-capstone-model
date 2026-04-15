@@ -6,8 +6,7 @@ from sqlalchemy import event
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
 from app.infraestructure.database.connection_manager import ConnectionManager
-from app.entities.utils.global_values_store import globals
-from sqlalchemy.orm import Session
+import app.entities.utils.global_values_store as value_store
 
 from app.application.post_process.proccess_final_data import analyze_match
 from app.utils.routes import BASE_RES_DIR, OUTPUT_REPORTS_DIR
@@ -25,7 +24,7 @@ async def process_video_async(video_name: str, match_id: int, color: str):
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db_path.touch(exist_ok=True)
     connection_manager = ConnectionManager(match_id=match_id)
-    globals.connection_manager = connection_manager
+    value_store.globals.connection_manager = connection_manager
     
     @event.listens_for(connection_manager.engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
@@ -72,7 +71,7 @@ async def export_data(
     max_records: int = 100000,
 ):
     try:
-        db = globals.connection_manager.create_session()
+        db = value_store.globals.connection_manager.create_session()
         player_records = (
             db.query(PlayerState).order_by(PlayerState.id).limit(max_records).all()
         )

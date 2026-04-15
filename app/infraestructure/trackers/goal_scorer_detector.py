@@ -1,18 +1,21 @@
 from __future__ import annotations
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
 import numpy as np
-from polars import override
 import supervision as sv
 from sqlalchemy.orm import Session
 
+from app.core.config import BATCH_SIZE
 from app.entities.collections import TrackCollectionPlayer
+from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import PlayerState
+from app.entities.models.detected_object_data import AnalysisData
 from app.logger import debug_logger, error_logger, info_logger
-
+import app.entities.utils.tools_context as context 
+import app.entities.utils.global_values_store as value_store
 
 class ShotOutcome(Enum):
     GOAL = "goal"
@@ -45,6 +48,13 @@ class ShotEvent:
     distance_to_goal: float
     goal_bbox: List[float]
     confidence: float = 0.0
+
+@dataclass
+class Goal:
+    frame: int
+    goal_id: int
+    bbox: list[float]
+    confidence: float
 
 
 class ShotDetector:
@@ -90,6 +100,7 @@ class ShotDetector:
         self.pixel_threshold = pixel_threshold
         self.max_assign_distance = max_assign_distance
         self.goal_zone_expansion = goal_zone_expansion
+        self.target_name = "soccer-goal"
 
         # Historial de posesión
         self._possession_history: deque[BallPossessionSnapshot] = deque(
@@ -180,15 +191,15 @@ class ShotDetector:
         best_pid: Optional[int] = None
         best_dist = float("inf")
 
-        for p in players:
-            pbbox = p.get_bbox()
-            if not pbbox:
+        for player in players:
+            player_bbox = player.get_bbox()
+            if not player_bbox:
                 continue
 
-            d = self._distance_bbox(ball_bbox, pbbox)
-            if d < best_dist:
-                best_dist = d
-                best_pid = int(f"{p.player_id}")
+            distance = self._distance_bbox(ball_bbox, player_bbox)
+            if distance < best_dist:
+                best_dist = distance
+                best_pid = int(f"{player.player_id}")
 
         if best_pid is not None and best_dist <= self.max_assign_distance:
             self._possession_history.append(
@@ -224,6 +235,9 @@ class ShotDetector:
             ),
         )
         return best_id
+    
+    def _get_last_ball_instances(self, actual_frame: int, intances: list[BallEventModel]) -> list[BallEventModel]:
+        return [b for b in intances if int(f'{b.frame_index}') <= actual_frame and int(f'{b.frame_index}') >= actual_frame - BATCH_SIZE]
 
 
     def _update_ball_trajectory(
@@ -303,56 +317,33 @@ class ShotDetector:
         self,
         ball_bbox: list[float],
         goal_bbox: list[float],
-        detections: sv.Detections,
-        class_names: List[str]
+        players: list[PlayerState],
     ) -> ShotOutcome:
         """
         Determina el resultado del tiro: gol, atajado, desviado, etc.
         """
-        # Verificar si es gol (balón dentro del arco)
         if self._ball_inside_goal(ball_bbox, goal_bbox):
             return ShotOutcome.GOAL
-        
-        # Verificar si hay portero cerca (posible atajada)
-        # Nota: Asume que tienes una clase 'goalkeeper' o similar en tu modelo
-        goalkeeper_idx = None
-        for idx, name in enumerate(class_names):
-            if 'keeper' in name.lower() or 'portero' in name.lower() or 'goalkeeper' in name.lower():
-                goalkeeper_idx = idx
-                break
-        
-        if goalkeeper_idx is not None:
-            mask_keeper = detections.class_id == goalkeeper_idx
-            if mask_keeper.any():
-                keepers = detections.xyxy[mask_keeper]
-                for keeper_bbox in keepers:
-                    # Si el balón está cerca del portero y no entró, probable atajada
-                    if self._distance_bbox(ball_bbox, keeper_bbox.tolist()) < 100:
-                        return ShotOutcome.SAVED
-        
-        # Si el balón pasó cerca del arco pero no entró
+
         ball_center = self._bbox_center(ball_bbox)
         goal_center = self._bbox_center(goal_bbox)
         dist_to_goal = np.linalg.norm(np.array(ball_center) - np.array(goal_center))
         
-        # Si está cerca del arco pero no entró, podría ser bloqueado o desviado
-        if dist_to_goal < 150:  # Muy cerca del arco
-            # Verificar si hay jugadores cercanos (posible bloqueo)
+        if dist_to_goal < 150:
             player_idx = None
-            for idx, name in enumerate(class_names):
-                if 'player' in name.lower():
-                    player_idx = idx
+            for player in players:
+                bbox = player.get_bbox()
+                if bbox is None:
+                    continue
+
+                distance = self._distance_bbox(ball_bbox, bbox)
+                if distance < 100:
+                    player_idx = int(f"{player.player_id}")
                     break
             
             if player_idx is not None:
-                mask_players = detections.class_id == player_idx
-                if mask_players.any():
-                    players = detections.xyxy[mask_players]
-                    for player_bbox in players:
-                        if self._distance_bbox(ball_bbox, player_bbox.tolist()) < 80:
-                            return ShotOutcome.BLOCKED
+                return ShotOutcome.BLOCKED
         
-        # Por defecto, desviado si no es gol
         return ShotOutcome.MISSED
 
     def update(
@@ -373,45 +364,85 @@ class ShotDetector:
         
         if detections is None or len(detections) == 0:
             return False, None
-
-        class_names = detections.data.get("class_name", [])
-        if isinstance(class_names, np.ndarray):
-            class_names = class_names.tolist()
-
-        # Buscar índices de clases
-        cls_name_to_id = {name: idx for idx, name in enumerate(class_names)}
         
-        ball_idx = cls_name_to_id.get("soccer-ball")
-        goal_idx = cls_name_to_id.get("soccer-goal")
-
-        if ball_idx is None or goal_idx is None:
-            info_logger.debug("[ShotDetector] Ball or goal class not found")
+        mask = detections.class_id == self.target_name
+        bboxes = np.asarray(detections.xyxy)    
+        goal_ids = np.asarray(detections.tracker_id) 
+        confidence = np.asarray(detections.confidence)
+        
+        if not mask.any() or not bboxes.any() or not goal_ids.any() or not confidence.any():
+            return False, None
+        
+        bboxes = bboxes[mask]
+        goal_ids = goal_ids[mask]
+        confidence = confidence[mask]
+        info_logger.info(f"[ShotDetector] Bboxes: {bboxes}")
+        info_logger.info(f"[ShotDetector] Goal IDs: {goal_ids}")
+        info_logger.info(f"[ShotDetector] Mask: {mask}")
+        info_logger.info(f"[ShotDetector] Data: {detections.data}")
+        
+        goal = Goal(
+            frame=frame_num,
+            bbox=[0,0,0,0],
+            confidence=0,
+            goal_id=1
+        )
+        
+        if not bboxes.any() and not goal_ids.any():
             return False, None
 
-        mask_ball = detections.class_id == ball_idx
-        mask_goal = detections.class_id == goal_idx
+        for bbox, id, conf in zip(bboxes, goal_ids, confidence):
+            if id is None or not str(id).isnumeric():
+                id = 1
+            
+            if bbox is None:
+                continue
+            
+            bbox_list = bbox.tolist()
+            x, y = self._bbox_center(bbox_list)
+            
+            if goal.confidence < conf:
+                goal.confidence = conf
+                goal.bbox = bbox_list
+                goal.goal_id = int(id)
+            
+            context.analysis_context.tools.analysis_data_collector.add_row(AnalysisData(
+                    frame=frame_num,
+                    track_id=1,
+                    x=x,
+                    y=y,
+                    vclass="goal",
+                    timestamps=value_store.globals.timestamp
+                ))
 
-        if not mask_ball.any() or not mask_goal.any():
+        ball_instances = context.analysis_context.tools.ball_records.get_balls_last_frames(frame_num)
+        ball_instances = self._get_last_ball_instances(frame_num, ball_instances)
+        info_logger.info(f"[ShotDetector] Ball instances: {len(ball_instances)}")
+
+        if len(ball_instances) == 0:
             return False, None
-
-        # Seleccionar detecciones con mayor confianza
-        best_ball = np.argmax(detections.confidence[mask_ball])
-        best_goal = np.argmax(detections.confidence[mask_goal])
-
-        ball_bbox = detections.xyxy[mask_ball][best_ball].tolist()
-        goal_bbox = detections.xyxy[mask_goal][best_goal].tolist()
+    
+        ball_bbox = ball_instances[0].get_bbox()
         
-        ball_conf = float(detections.confidence[mask_ball][best_ball])
-        goal_conf = float(detections.confidence[mask_goal][best_goal])
-
-        # Actualizar trayectoria del balón
+        if ball_bbox is None:
+            for ball in ball_instances:
+                if ball.get_bbox() is not None:
+                    ball_bbox = ball.get_bbox()
+                    break
+        
+        if ball_bbox is None:
+            return False, None
+        
         self._update_ball_trajectory(frame_num, ball_bbox)
 
         # Obtener jugadores y actualizar posesión
-        players: List[PlayerState] = TrackCollectionPlayer(db).get_all_states()
+        players: List[PlayerState] = context.analysis_context.tools.player_records.get_all_states(frame_index=frame_num)
+        # Todo Error el ultimo bbox no siempre va a tener el balon, hay que cambiarlo para verificar una lista de bbox
         current_possession = self._update_possession_cache(frame_num, ball_bbox, players)
+        goal_bbox = goal.bbox
 
         # Verificar si el balón se mueve hacia el arco
+        # Todo Error el ultimo bbox no siempre va a tener el balon, es necesario considerar todos los bbox, esta logica sera pasada a Rust
         is_towards_goal, speed, dist_to_goal = self._is_moving_towards_goal(goal_bbox)
         
         if not is_towards_goal:
@@ -432,9 +463,10 @@ class ShotDetector:
         shooter_id = self._most_likely_shooter()
         
         # Determinar resultado
-        outcome = self._determine_shot_outcome(ball_bbox, goal_bbox, detections, class_names)
+        outcome = self._determine_shot_outcome(ball_bbox, goal_bbox, players)
         
         # Crear evento de tiro
+        # Se considera que la confianza del balon en el momento de la deteccion es 0.47 dado que no se almacena la confianza en base a pruebas, esa es la confianza maxima con la que se detecta en el arco, siendo la minima 0.35 
         shot_event = ShotEvent(
             frame=frame_num,
             player_id=shooter_id if shooter_id else -1,
@@ -442,12 +474,11 @@ class ShotDetector:
             ball_speed=speed,
             distance_to_goal=dist_to_goal,
             goal_bbox=goal_bbox,
-            confidence=(ball_conf + goal_conf) / 2
+            confidence=(0.47 + goal.confidence) / 2
         )
         
         self._shots.append(shot_event)
         
-        # Log detallado
         info_logger.info(
             f"[ShotDetector] ¡TIRO DETECTADO! "
             f"Frame={frame_num}, "
@@ -457,7 +488,6 @@ class ShotDetector:
             f"Distancia={dist_to_goal:.1f}px"
         )
 
-        # Actualizar estadísticas del jugador en BD
         if shooter_id is not None:
             self._update_player_stats(shooter_id, outcome, db)
 
@@ -466,38 +496,26 @@ class ShotDetector:
     def _update_player_stats(self, player_id: int, outcome: ShotOutcome, db: Session) -> None:
         """Actualiza las estadísticas de tiros del jugador en la base de datos"""
         try:
-            collection = TrackCollectionPlayer(db)
+            collection = TrackCollectionPlayer()
             player_row = collection.get_player(player_id)
 
             if player_row is None:
                 error_logger.error(f"[ShotDetector] Player {player_id} not found in DB")
                 return
 
-            # Actualizar contadores
-            current_shots = getattr(player_row, 'shots', 0) or 0
             current_goals = getattr(player_row, 'goals', 0) or 0
-            current_on_target = getattr(player_row, 'shots_on_target', 0) or 0
-
-            new_shots = current_shots + 1
             
-            # Determinar si fue a puerta (goal o saved = a puerta)
-            on_target = outcome in [ShotOutcome.GOAL, ShotOutcome.SAVED]
-            new_on_target = current_on_target + (1 if on_target else 0)
-            
-            # Si fue gol, actualizar goles
             new_goals = current_goals + (1 if outcome == ShotOutcome.GOAL else 0)
 
             updates = {
-                'shots': new_shots,
-                'shots_on_target': new_on_target,
                 'goals': new_goals
             }
             
-            collection.patch(int(f"{player_row.id}"), updates)
+            collection.patch(int(f"{player_row.player_id}"), updates)
 
             info_logger.info(
                 f"[ShotDetector] Stats updated for player {player_id}: "
-                f"shots={new_shots}, on_target={new_on_target}, goals={new_goals}"
+                f"goals={new_goals}"
             )
 
         except Exception as e:

@@ -9,6 +9,7 @@ from app.entities.models.PlayerModels import PlayerState
 from app.entities.utils import Singleton
 from app.logger import debug_logger, error_logger
 from sqlalchemy.orm import Session
+import app.entities.utils.tools_context as context
 
 
 class CameraMovementEstimator(metaclass=Singleton):
@@ -227,7 +228,7 @@ class CameraMovementEstimator(metaclass=Singleton):
                 debug_logger.debug(
                     "Usando TrackCollectionPlayer para actualizar el track."
                 )
-                tracks_collection = TrackCollectionPlayer(db)
+                tracks_collection = context.analysis_context.tools.player_records
                 tracks_collection.patch_state(
                     int(f"{track.player_id}"), int(f"{track.frame_index}"), updates
                 )
@@ -237,7 +238,7 @@ class CameraMovementEstimator(metaclass=Singleton):
                 debug_logger.debug(
                     "Usando TrackCollectionBall para actualizar el track."
                 )
-                tracks_collection = TrackCollectionBall(db)
+                tracks_collection = context.analysis_context.tools.ball_records
                 tracks_collection.patch(int(f"{track.id}"), updates)
             if not tracks_collection:
                 error_logger.error("tracks_collection no pudo ser determinado.")

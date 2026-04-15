@@ -18,6 +18,7 @@ class TrackerFactory(metaclass=Singleton):
         self._trackers: Dict[str, Tracker] = {}
         # cache para instancias creadas (lazy)
         self._create_default_trackers()
+        
 
     def _create_default_trackers(self) -> None:
         # Importar aquí para evitar circular imports al nivel module

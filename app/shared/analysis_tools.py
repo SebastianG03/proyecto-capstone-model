@@ -1,81 +1,80 @@
+import torch
 import logging
-
-from sqlalchemy.orm import Session
 from cv2.typing import MatLike
 
+import app.entities.collections as collections
+import app.infraestructure.camera as camera
+import app.infraestructure.view_transformer as visual_transformer
+import app.infraestructure.team_assigner as team_estimator
+import app.infraestructure.speed_and_distance_estimator as movement_estimator
+import app.infraestructure.player_ball_assigner as ball_assigner
+import app.entities.models as models
+import app.entities.utils.global_values_store as value_store
+import app.entities.utils.tools_context as context
+import app.logger as logger_lib
+
 from app.entities.utils.singleton import Singleton
+from app.utils.routes import TROCR_PATH
 
 
 class AnalysisTools(metaclass=Singleton):
     
     def __init__(self):
-        from app.entities.collections import TrackCollectionPlayer, TrackCollectionBall, TrackCollectionHeatmapPoint
-        self.player_records: TrackCollectionPlayer
-        self.ball_records: TrackCollectionBall
-        self.heatmap_points: TrackCollectionHeatmapPoint
-        from app.infraestructure.camera.number_recognizer import PlayerNumberDetector
-        from app.infraestructure.camera.trocr_buffer import TROCRBuffer
-        from app.infraestructure.view_transformer.view_transformer import ViewTransformer
-        from app.infraestructure.team_assigner.team_assigner import TeamAssigner
-        from app.infraestructure.speed_and_distance_estimator.speed_and_distance_estimator import (
-            SpeedAndDistanceEstimator,
-        )
-        from app.infraestructure.camera.depth_estimator import DepthEstimator
-        from app.infraestructure.player_ball_assigner.player_ball_assigner import (
-            PlayerBallAssigner,
-        )
-        from app.infraestructure.camera.camera_movement_estimator import CameraMovementEstimator
-        
-        self.view_transformer: ViewTransformer
-        self.speed_and_distance: SpeedAndDistanceEstimator
-        self.team_assigner: TeamAssigner
-        self.player_ball_assigner: PlayerBallAssigner
-        self.camera_movement_estimator: CameraMovementEstimator
-        self.number_recognizer: PlayerNumberDetector
-        self.trocr_buffer: TROCRBuffer
-        self.depth_estimator: DepthEstimator
+        self.player_records: collections.TrackCollectionPlayer
+        self.ball_records: collections.TrackCollectionBall
+        self.heatmap_points: collections.TrackCollectionHeatmapPoint
+        self.view_transformer: visual_transformer.ViewTransformer
+        self.speed_and_distance: movement_estimator.SpeedAndDistanceEstimator
+        self.team_assigner: team_estimator.TeamAssigner
+        self.player_ball_assigner: ball_assigner.PlayerBallAssigner
+        self.camera_movement_estimator: camera.CameraMovementEstimator
+        self.number_recognizer: camera.PlayerNumberDetector
+        self.trocr_buffer: camera.TROCRBuffer
+        self.depth_estimator: camera.DepthEstimator
+        self.analysis_data_collector: collections.DetectedDataAnalysis
 
-    def start(self, db: Session, first_frame: MatLike):
-        from app.entities.utils.tools_context import analysis_context
-        from app.entities.models import PlayerState, BallEventModel
-        from app.entities.collections import TrackCollectionPlayer, TrackCollectionBall, TrackCollectionHeatmapPoint
-        from app.entities.utils.global_values_store import globals
-        from app.infraestructure.camera.number_recognizer import PlayerNumberDetector
-        from app.infraestructure.camera.trocr_buffer import TROCRBuffer
-        from app.infraestructure.view_transformer.view_transformer import ViewTransformer
-        from app.infraestructure.team_assigner.team_assigner import TeamAssigner
-        from app.infraestructure.camera.depth_estimator import DepthEstimator
-        from app.entities.models import HeatmapPoint
-        from app.infraestructure.speed_and_distance_estimator.speed_and_distance_estimator import (
-            SpeedAndDistanceEstimator,
-        )
-        from app.infraestructure.player_ball_assigner.player_ball_assigner import (
-            PlayerBallAssigner,
-        )
-        from app.infraestructure.camera.camera_movement_estimator import CameraMovementEstimator
-        from app.utils.routes import TROCR_PATH
-        import torch
-        from app.logger.logger import get_logger
+    def start(self, first_frame: MatLike, match_id: int):
+        """
+        Initialize all the necessary tools for the analysis
+
+        Parameters
+        ----------
+        db : Session
+            The database session
+        first_frame : MatLike
+            The first frame of the video
+
+        Notes
+        -----
+        This function initializes all the necessary tools for the analysis.
+        It creates instances of the TrackCollection classes for the player, ball, and heatmap points,
+        and initializes the ViewTransformer, SpeedAndDistanceEstimator, TeamAssigner, PlayerBallAssigner,
+        CameraMovementEstimator, PlayerNumberDetector, TROCRBuffer, and DepthEstimator classes.
+        """
+
         
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger = get_logger(logging.DEBUG)
+        logger = logger_lib.get_logger(logging.DEBUG)
 
-        self.player_records = TrackCollectionPlayer(db)
-        self.player_records.orm_model = PlayerState
-        self.ball_records = TrackCollectionBall(db)
-        self.ball_records.orm_model = BallEventModel
-        self.heatmap_points = TrackCollectionHeatmapPoint(db)
-        self.heatmap_points.orm_model = HeatmapPoint
+        self.player_records = collections.TrackCollectionPlayer()
+        self.player_records.orm_model = models.PlayerState
+        self.ball_records = collections.TrackCollectionBall()
+        self.ball_records.orm_model = models.BallEventModel
+        self.heatmap_points = collections.TrackCollectionHeatmapPoint()
+        self.heatmap_points.orm_model = models.HeatmapPoint
         
-        self.view_transformer = ViewTransformer()
-        self.speed_and_distance = SpeedAndDistanceEstimator(frame_rate=globals.fps)
-        self.team_assigner = TeamAssigner()
-        self.player_ball_assigner = PlayerBallAssigner(fps=globals.fps)
-        self.camera_movement_estimator = CameraMovementEstimator(first_frame, logger)
-        self.number_recognizer = PlayerNumberDetector(TROCR_PATH.as_posix())
-        self.trocr_buffer = TROCRBuffer()
-        self.depth_estimator = DepthEstimator(device, frame_rate=globals.fps)
-        analysis_context.tools = self
+        self.view_transformer = visual_transformer.ViewTransformer()
+        fps = value_store.globals.fps
+        self.speed_and_distance = movement_estimator.SpeedAndDistanceEstimator(frame_rate=fps)
+        self.team_assigner = team_estimator.TeamAssigner()
+        self.player_ball_assigner = ball_assigner.PlayerBallAssigner(fps=fps)
+        self.camera_movement_estimator = camera.CameraMovementEstimator(first_frame, logger)
+        self.number_recognizer = camera.PlayerNumberDetector(TROCR_PATH.as_posix())
+        self.trocr_buffer = camera.TROCRBuffer()
+        self.depth_estimator = camera.DepthEstimator(device, frame_rate=fps)
+        self.analysis_data_collector = collections.DetectedDataAnalysis(match_id=match_id)
+        
+        context.analysis_context.tools = self
 
     def reset(self):
         pass

@@ -57,7 +57,6 @@ class PlayerState(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # --- FK al jugador -------------------------------------------------------
     player_id = Column(
         Integer,
         ForeignKey("players.player_id", ondelete="CASCADE"),
@@ -65,13 +64,11 @@ class PlayerState(Base):
         index=True,
     )
 
-    # --- índice del frame ----------------------------------------------------
     frame_index = Column(Integer, index=True, nullable=False)
-
-    # --- bounding box crudo (detector) ---------------------------------------
     bbox = Column(String, nullable=True)  # JSON list
+    conf = Column(Float)
 
-    # --- posición ------------------------------------------------------------
+    # posición
     x = Column(Float)
     y = Column(Float)
     z = Column(Float)
@@ -82,7 +79,7 @@ class PlayerState(Base):
     x_smoothed = Column(Float, nullable=True)
     y_smoothed = Column(Float, nullable=True)
 
-    # --- balón ---------------------------------------------------------------
+    # balón
     ball_x = Column(Float, nullable=True)
     ball_y = Column(Float, nullable=True)
     ball_z = Column(Float, nullable=True)
@@ -91,23 +88,22 @@ class PlayerState(Base):
     ball_possession_time = Column(Float, default=0.0)
     ball_owner_id = Column(Integer, index=True, nullable=True)
 
-    # --- dinámica ------------------------------------------------------------
+    # dinámica
     distance = Column(Float, default=0.0)  # on meters
     incremental_distance = Column(Float, default=0.0)
     speed = Column(Float, default=0.0)  # on km per hour
     acceleration = Column(Float, default=0.0)
     is_sprint = Column(Boolean, default=False)
 
-    # --- visibilidad ---------------------------------------------------------
     time_visible = Column(Float, default=0.0)
 
-    # --- timestamp absoluto (p.e. epoch-ms del vídeo) ------------------------
+    # timestamp absoluto guardado en milisegundos
     timestamp_ms = Column(Float, index=True, nullable=True)
 
-    # --- timestamp de inserción ----------------------------------------------
+    # timestamp de inserción
     created_at = Column(DATETIME(timezone=True), default=datetime.now(timezone.utc))
 
-    # --- relación inversa ----------------------------------------------------
+    # relación inversa
     player = relationship("Player", back_populates="states")
 
     def set_bbox(self, bbox_list: list[int]):

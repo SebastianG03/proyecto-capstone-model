@@ -14,7 +14,7 @@ import inspect
 import traceback
 
 from app.logger import get_logger 
-from app.utils.routes import OUTPUT_REPORTS_DIR
+from app.utils.routes import MEMORY_TRACKER_DIR, OUTPUT_REPORTS_DIR
 
 class MemoryTrigger(str, Enum):
     SCHEDULED = "scheduled"
@@ -43,7 +43,7 @@ class MemoryReporter:
         top_n_variables: int = 15,
         enable_scheduled_monitoring: bool = True
     ):
-        self.report_file = OUTPUT_REPORTS_DIR / f"memory_report_{match_id}.json"
+        self.report_file = MEMORY_TRACKER_DIR / f"memory_report_{match_id}.json"
         self.interval = interval_seconds
         self.alert_threshold = alert_threshold_mb
         self.top_n = top_n_variables

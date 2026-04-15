@@ -6,11 +6,12 @@ import tracemalloc
 from tqdm import tqdm
 
 from app.core.config import BATCH_SIZE, DEBUG, MAX_EMPTY_BATCHES
+from app.entities.services.video_anotator import VideoAnotator
 from app.infraestructure.plotting import generate_diagrams
 
 from app.infraestructure.services.video_processing_service import check_video, get_total_frames
 from app.infraestructure.trackers import TrackerService
-from app.entities.utils.global_values_store import globals
+import app.entities.utils.global_values_store as value_store
 
 from app.application.analysis.process import process_frame
 from app.logger.memory_tracker import MemoryReporter
@@ -25,12 +26,12 @@ from app.infraestructure.services import (
 )
 import traceback
 
-from app.utils.routes import BALL_MODEL_PATH, OUTPUT_REPORTS_DIR, PLAYER_MODEL_PATH
+from app.utils.routes import ANOTATED_VIDEOS_DIR, BALL_MODEL_PATH, INPUT_VIDEOS_DIR, METRICS_DIR, PLAYER_MODEL_PATH
 from app.logger import debug_logger, error_logger, info_logger
 
 
 def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
-    metrics_file = OUTPUT_REPORTS_DIR / f"metrics_match_{match_id}.json"
+    metrics_file = METRICS_DIR / f"metrics_match_{match_id}.json"
     time_reporter = ProcessTimeReporter(logger=debug_logger, match_id=match_id)
     frame_num = 0
     empty_batches = 0
@@ -41,8 +42,8 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
         alert_threshold_mb=3000
     )
     
-    db = globals.connection_manager.create_session()
-    globals.session = db
+    db = value_store.globals.connection_manager.create_session()
+    value_store.globals.session = db
 
     metrics = {
         "processing_time": [],
@@ -57,15 +58,14 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
     downloader = R2Downloader()
 
     # download_path = Path(INPUT_VIDEOS_DIR, video_name)
-    download_path = Path("C:/Users/Usuario/Desktop/projects/proyecto-capstone-model/app/res/input_videos/0fd52eb5-f7cc-45f2-8ea9-b7b451864ce8-Clip_3_00055618.mkv")
+    download_path = Path(r"C:\Users\Usuario\Desktop\temp\res\2_720p.mkv")
     # downloader.build_destination_path(
     #     key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix()
     # )
     # downloader.stream_download(
     #     key=video_name, destination_path=download_path.as_posix()
     # )
-    # print(f"Video descargado en {download_path.as_posix()}")
-    # -----------------------------
+    print(f"Video descargado en {download_path.as_posix()}")
 
     batch_middle = BATCH_SIZE // 2
     batch_proportion = batch_middle // 2
@@ -82,7 +82,15 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
         raise FileNotFoundError
     
     video_stream = read_video(download_path.as_posix(), batch_size=BATCH_SIZE)
-    images_per_player = 3
+    
+    value_store.globals.video_anotator = VideoAnotator(
+        output_path=Path(f"{ANOTATED_VIDEOS_DIR}/{video_name[:10]}_{match_id}.mp4"),
+        fps=value_store.globals.fps,
+        frame_size=value_store.globals.frame_size,
+        colors=value_store.globals.anotated_colors,
+        window_name=f"Annotated Video of match {match_id}",
+        show_preview=True
+    )
 
     if not video_stream: 
         error_logger.error("Error: No frames read from video")
@@ -95,7 +103,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
             )
 
         first_batch = next(video_stream)
-        first_frame = first_batch[0]
+        first_frame, _ = first_batch[0]
         first_batch = None
 
         if not first_frame.any():
@@ -103,7 +111,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
             return
         info_logger.info("Inicializando servicios de análisis...")
         tools = AnalysisTools()
-        tools.start(db=db, first_frame=first_frame)
+        tools.start(first_frame=first_frame, match_id=match_id)
         first_frame = None
     except StopIteration as st:
         error_logger.error("Error: No frames read from video")
@@ -135,23 +143,23 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
             
             progress.update(len(batch))
 
-            frames = [
-                batch[0],
-                batch[batch_middle - batch_proportion],
-                batch[batch_middle],
-                batch[batch_middle + batch_proportion],
-                batch[-1]
-            ]
+            # frames = [
+            #     batch[0],
+            #     batch[batch_middle - batch_proportion],
+            #     batch[batch_middle],
+            #     batch[batch_middle + batch_proportion],
+            #     batch[-1]
+            # ]
 
             frame_num = process_frame(
                 match_id=match_id,
-                video_batch=frames,
+                video_batch=batch,
                 frame_num=frame_num,
                 db=db,
                 tracker=tracker,
                 metrics=metrics,
                 export_data_file=metrics_file,
-                time_reporter=time_reporter
+                time_reporter=time_reporter,
             )
             time_reporter.publish()
             info_logger.info(
@@ -171,6 +179,9 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
             db=db, match_id=match_id
         )
         info_logger.info("Heatmaps subidos.")
+        
+        tools.analysis_data_collector.export_to_csv()
+        info_logger.info("Datos de análisis exportados a CSV.")
 
         total_time = time.time() - start_time
         metrics.update({

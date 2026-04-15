@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.entities.collections import TrackCollectionPlayer
+import app.entities.utils.tools_context as context 
 
 
 class BallAssigner:
@@ -34,7 +34,7 @@ class BallAssigner:
         frame_number: int,
         scale: float = 1.0,
     ) -> Optional[int]:
-        player_record = TrackCollectionPlayer(db)
+        player_record = context.analysis_context.tools.player_records
         if ball_state is None:
             return self._release_owner(frame_number)
 
@@ -129,7 +129,7 @@ class BallAssigner:
 
     def _change_owner(self, new_id: int, frame: int) -> None:
         logger.debug(
-            f"[BallAssigner] owner {self.current_owner} → {new_id} at frame {frame}"
+            f"[BallAssigner] owner {self.current_owner} -- {new_id} at frame {frame}"
         )
         self.current_owner = new_id
         self.owner_since_frame = frame
@@ -154,31 +154,25 @@ class BallAssigner:
     ) -> Optional[int]:
         bx, by = ball_location
 
-        # Si no hay dueño actual, asignar al mejor candidato
         if self.current_owner is None:
             return best_id
 
-        # Si el mejor candidato es el dueño actual, mantener
         if best_id == self.current_owner:
             return self.current_owner
 
-        # Verificar cooldown
         current_frames = frame_number - self.owner_since_frame
         if current_frames < self.cooldown_frames:
             return self.current_owner
 
-        # Verificar si el dueño actual sigue cerca
         owner = next((p for p in players if p["player_id"] == self.current_owner), None)
         if not owner:
             return best_id
 
         dist_owner = np.hypot(owner["x"] - bx, owner["y"] - by)
 
-        # Si el balón se mueve rápido (pase), cambiar dueño
         if ball_velocity > 5.0:  # Ajustar según necesidad
             return best_id
 
-        # Si el dueño actual sigue dentro de la distancia permitida, mantener
         if dist_owner <= max_distance * 1.2:
             return self.current_owner
 

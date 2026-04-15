@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.config import BATCH_SIZE
 from app.entities.models import PlayerState, BallEventModel
 from app.shared.analysis_tools import AnalysisTools
-from app.entities.utils.global_values_store import globals
+import app.entities.utils.global_values_store as value_store
 
 def assign_ball_to_player(
     ball_records: List[BallEventModel],
@@ -36,7 +36,7 @@ def assign_ball_to_player(
                 continue
 
             logger.info("[Assign Ball] Asignando balón a jugador...")
-            dt = dt * globals.fps if dt > 0 else BATCH_SIZE / globals.fps
+            dt = dt * value_store.globals.fps if dt > 0 else BATCH_SIZE / value_store.globals.fps
             constant = tools.camera_movement_estimator.get_current_scale() * depth * pixels_to_meters
             logger.info(f"[Assign Ball] Parámetros para asignación - dt: {dt}, depth: {depth}, pixels_to_meters: {pixels_to_meters}, constant: {constant}")
             assigned_player_id = tools.player_ball_assigner.assign_ball_to_player(

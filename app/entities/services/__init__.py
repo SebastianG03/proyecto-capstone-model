@@ -3,3 +3,4 @@ from .drawer_factory import (
     DrawerFactoryError as DrawerFactoryError,
 )
 from .drawer_service import DrawerService as DrawerService
+from .video_anotator import VideoAnotator as VideoAnotator

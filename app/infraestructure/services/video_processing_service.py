@@ -1,6 +1,6 @@
 import pathlib
 import time
-from typing import Generator, List, Tuple, Optional
+from typing import Generator, List, Tuple
 from uuid import uuid4
 from xmlrpc.client import boolean
 
@@ -9,9 +9,8 @@ from cv2.typing import MatLike
 
 from app.core.config import DEBUG
 from app.entities.models.PlayerModels import Player, PlayerState
-from app.entities.utils.global_values_store import globals
+import app.entities.utils.global_values_store as value_store
 from app.logger.logger import debug_logger, info_logger, error_logger
-from app.shared.analysis_tools import AnalysisTools
 
 
 def _open_capture(video_path: str):
@@ -22,15 +21,15 @@ def _open_capture(video_path: str):
 
 
 def _read_batch(
-    cap, batch_size: int, last_time: float
-) -> List[MatLike]:
-    batch: List[MatLike] = []
-    now = time.time()
+    cap, batch_size: int
+) -> List[Tuple[MatLike, float]]:
+    batch: List[Tuple[MatLike, float]] = []
     for _ in range(batch_size):
-        ret, frame = cap.read()
-        if not ret:
+        frame_exists, frame = cap.read()
+        dt = float(cap.get(cv2.CAP_PROP_POS_MSEC))
+        if not frame_exists:
             break
-        batch.append(frame)
+        batch.append((frame, dt))
     return batch
 
 def check_video(video_path: str) -> bool:
@@ -46,7 +45,7 @@ def get_total_frames(video_path: str) -> int:
 
 def read_video(
     video_path: str, batch_size: int = 16
-) -> Generator[List[MatLike], None, None]:
+) -> Generator[List[Tuple[MatLike, float]], None, None]:
     
     if batch_size <= 6:
         raise ValueError("El tamaño del batch debe ser mayor a 6")
@@ -55,10 +54,13 @@ def read_video(
     cap = _open_capture(video_path)
     frame_rate = cap.get(cv2.CAP_PROP_FPS)
     total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    video_size = (cap.get(cv2.CAP_PROP_FRAME_WIDTH), cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    value_store.globals.frame_size = video_size
+    
     info_logger.info(f"[READ VIDEO] Total frames: {total_frames}, FPS: {frame_rate}")
-    if frame_rate and frame_rate != globals.fps:
+    if frame_rate != value_store.globals.fps:
         info_logger.info(f"FPS detectado: {frame_rate}, actualizando valor global.")
-        globals.update(fps=frame_rate)
+        value_store.globals.update(fps=frame_rate)
 
     try:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
@@ -66,7 +68,8 @@ def read_video(
         frame_count = 0
 
         while frame_count < total_frames:
-            batch = _read_batch(cap, batch_size, last_time)
+            batch = _read_batch(cap, batch_size)
+            # TODO modificar el tamaño del frame en caso de ser necesario
             last_time = time.time()
             frame_count += len(batch)
             if batch:

@@ -5,7 +5,7 @@ from app.core.config import PUBLIC_URL
 from app.entities.models.BallState import BallEventModel
 from app.entities.models.PlayerModels import Player, PlayerState
 from datetime import datetime
-from app.entities.utils.tools_context import AnalysisContext
+import app.entities.utils.tools_context as context 
 from app.logger import debug_logger, info_logger
 
 
@@ -19,7 +19,7 @@ def analyze_match(
     """
     Analiza los datos de un partido y devuelve estadísticas por jugador.
     """
-    heatmaps_collection = AnalysisContext().tools.heatmap_points
+    heatmaps_collection = context.analysis_context.tools.heatmap_points
     # Agrupar estados por jugador
     states_by_player = defaultdict(list)
     for state in player_states:

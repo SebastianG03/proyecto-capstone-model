@@ -3,13 +3,13 @@ import json
 from pathlib import Path
 import time
 import tracemalloc
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from cv2.typing import MatLike
 import numpy as np
 from sqlalchemy.orm import Session
 
 from app.entities.models.PlayerModels import PlayerState
-from app.entities.utils.global_values_store import globals
+import app.entities.utils.global_values_store as value_store
 from app.infraestructure.services.video_processing_service import extract_player_images
 from app.infraestructure.trackers.goal_scorer_detector import GoalScorerDetector
 from app.infraestructure.trackers.goal_tracker import GoalTracker
@@ -29,12 +29,12 @@ from app.logger import info_logger, error_logger, debug_logger
 def process_frame(
     match_id: int,
     frame_num: int,
-    video_batch: List[MatLike],
+    video_batch: List[Tuple[MatLike, float]],
     db: Session,
     tracker: TrackerService,
     metrics: dict,
     export_data_file: Path,
-    time_reporter: ProcessTimeReporter
+    time_reporter: ProcessTimeReporter,
 ) -> int:
     """
     Procesa un lote de frames de video aislándolos entre sí:
@@ -50,13 +50,10 @@ def process_frame(
     goal_scorer = GoalScorerDetector(iou_threshold=0.0, pixel_threshold=200.0)
     
     time_reporter.start("get object tracks")
-    tracker.get_object_tracks(video_batch, frame_num, db)
     time_reporter.stop("get object tracks")
     try:
-        for frame in video_batch:
-            actual_time = time.time()
-            dt = actual_time - start_time
-            globals.update(timestamp=dt)
+        for frame, dt in video_batch:
+            value_store.globals.update(timestamp=dt)
             frame_num += 1
             pixels_to_meters = 0.1048
             area_boundarys = calculate_area_boundary_ends(frame)
@@ -89,6 +86,9 @@ def process_frame(
             # -------------------------------------------------------
             # 2. TRACKING DE OBJETOS (jugadores + balón)
             # -------------------------------------------------------
+
+            tracker.get_object_tracks(frame, frame_num, db)
+
             try:
                 info_logger.info(
                     "[ProcessRun] Paso 2: Procesando frame en el tracker..."
@@ -108,23 +108,29 @@ def process_frame(
                 raise e
             
             try:
-                last_player = tools.player_records.get_last()
-
-                if last_player is None:
-                    continue
-                
-                bbox = last_player.get_bbox()
-                
-                if not bbox:
-                    continue
-                
+                last_players = tools.player_records.get_states_by_frame(frame_num)
+                depths = []
                 time_reporter.start("depth_estimator")
-                depth = tools.depth_estimator.process_player_depth(
-                frame=frame, 
-                bbox=bbox, 
-                frame_num=frame_num, 
-                current_camera_scale=tools.camera_movement_estimator.get_current_scale()
-            )
+                if last_players is not None or len(last_players) > 0:
+                    for player in last_players:
+                        bbox = player.get_bbox()                
+                        if bbox: 
+                            depth = tools.depth_estimator.process_player_depth(
+                            frame=frame, 
+                            bbox=bbox, 
+                            frame_num=frame_num, 
+                            current_camera_scale=tools.camera_movement_estimator.get_current_scale()
+                            )
+                            if depth is not None:
+                                depths.append(depth)
+                
+                if depths:
+                    median_depth = np.median(depths)
+                    value_store.globals.depth = median_depth
+                    info_logger.info(f"[DepthEstimator] Profundidad estimada para el frame {frame_num}: {median_depth:.2f} metros, basado en {len(depths)} jugadores con profundidad estimada.")
+                else:
+                    info_logger.info(f"[DepthEstimator] No se pudieron estimar profundidades para el frame {frame_num}, se mantiene el anterior valor.")
+
                 time_reporter.stop("depth_estimator")
             except Exception as e:
                 error_logger.error(
@@ -135,33 +141,18 @@ def process_frame(
             # -------------------------------------------------------
             # 4. ESTIMAR VELOCIDAD / DISTANCIA
             # -------------------------------------------------------
-            try:
-                info_logger.info(
-                    "[ProcessRun] Paso 4: Estimando velocidad y distancia del último jugador..."
-                )
-                last_state = tools.player_records.get_last()
-                if last_state:
-                    time_reporter.start("speed_and_distance")
-                    tools.speed_and_distance.process_track(
-                        frame_num=frame_num,
-                        track_id=int(f"{last_state.player_id}"),
-                        track=last_state,
-                        depth=depth or 1.0,
-                        pixels_to_meters=pixels_to_meters,
-                        camera_scale=tools.camera_movement_estimator.get_current_scale(),
-                        db=db,
-                        dt=dt,
-                    )
-                    time_reporter.stop("speed_and_distance")
-                else:
-                    info_logger.info(
-                        "[ProcessRun] No hay último jugador para estimar velocidad/distancia."
-                    )
-            except Exception as e:
-                error_logger.error(
-                    f"[Frame {frame_num}] Error estimando velocidad/distancia: {e}"
-                )
-                raise e
+            info_logger.info(
+                "[ProcessRun] Paso 4: Estimando velocidad y distancia del último jugador..."
+            )
+            constant = tools.camera_movement_estimator.get_current_scale() * value_store.globals.depth * pixels_to_meters
+            time_reporter.start("speed_and_distance")
+            tools.speed_and_distance.process_track(
+                frame_num=frame_num,
+                constant=constant,
+                db=db,
+                dt=dt,
+            )
+            time_reporter.stop("speed_and_distance")
 
             # -------------------------------------------------------
             # 5. ASIGNACIÓN DEL BALÓN A JUGADOR, DEPENDE DE LA EJECUCION DEL PUNTO 4
@@ -178,7 +169,7 @@ def process_frame(
                         tools=tools,
                         db=db,
                         frame_index=frame_num,
-                        depth=depth or 1.0,
+                        depth=value_store.globals.depth or 1.0,
                         pixels_to_meters=pixels_to_meters,
                         dt=dt,
                         logger=info_logger,
@@ -199,94 +190,86 @@ def process_frame(
                 info_logger.info("[ProcessRun] Paso 6: Asignando equipo...")
                 state = db.query(PlayerState).order_by(PlayerState.id.desc()).first()
 
-                if state is None:
-                    info_logger.info(
-                        "[ProcessRun] No hay estado de jugador para asignar equipo."
-                    )
-                    continue
-
-                last_state = tools.player_records.get_last()
-                if last_state:
-                    time_reporter.start("team assigner")
-                    tools.team_assigner.assign_team_colors(
-                        frame=frame, players=tools.player_records.get_all_states()
-                    )
-                    tools.team_assigner.get_player_team(
-                        frame=frame, frame_num=frame_num, record=last_state, db=db
-                    )
-                    time_reporter.stop("team assigner")
-                else:
-                    info_logger.info(
-                        "[ProcessRun] No hay último jugador para asignar equipo."
-                    )
+                if state is not None:
+                    last_state = tools.player_records.get_last()
+                    if last_state:
+                        time_reporter.start("team assigner")
+                        tools.team_assigner.assign_team_colors(
+                            frame=frame, players=tools.player_records.get_all_states()
+                        )
+                        tools.team_assigner.get_player_team(
+                            frame=frame, frame_num=frame_num, record=last_state, db=db
+                        )
+                        time_reporter.stop("team assigner")
+                    else:
+                        info_logger.info(
+                            "[ProcessRun] No hay último jugador para asignar equipo."
+                        )
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error asignando equipo: {e}")
                 raise e
 
             try:
                 info_logger.info("[ProcessRun] Iniciando el reconocimiento del numero del jugador")
-                last_state = tools.player_records.get_last()
+                players = tools.player_records.get_states_by_frame(frame_num)
                 info_logger.info("[ProcessRun] Ultimo estado del jugador obtenido")
-                if last_state is not None and last_state.get_bbox() is not None:
-                    player_id = int(f"{last_state.player_id}")
-                    time_reporter.start("number recognizer")
-                    crop = tools.number_recognizer._crop_dorsal_region(
-                        frame, last_state.get_bbox() # type: ignore
-                    )
-                    if crop.size == 0:
-                        info_logger.info(
-                            "[ProcessRun] Crop del dorsal vacío, omitiendo reconocimiento."
+                
+                time_reporter.start("number recognizer")
+                if players is not None and len(players) > 0:
+                    players = [player.to_dict() for player in players]
+                    for player in players:
+                        player_id = int(player["player_id"])
+                        crop = tools.number_recognizer._crop_dorsal_region(
+                            frame, player["bbox"]
                         )
-                    else:
-                        proc = tools.number_recognizer._preprocess(crop)
-                        info_logger.info(
-                            "[ProcessRun] Reconociendo número de jugador..."
-                        )
-
-                        def update_best_num(num: Optional[int], conf: float):
-                            if num is not None and conf > 0.35:
-                                debug_logger.debug(
-                                    f"[ProcessRun] Número {num} con confianza "
-                                    f"{conf:.4f} añadido al jugador {player_id}."
-                                )
-                                numbers_data[player_id][num] += conf
-                        
-                        if proc is None:
+                        if crop.size == 0:
                             info_logger.info(
-                                "[ProcessRun] Imagen preprocesada vacía, omitiendo reconocimiento."
+                                "[ProcessRun] Crop del dorsal vacío, omitiendo reconocimiento."
                             )
-                            continue
-
-                        must_flush = tools.trocr_buffer.push(proc, update_best_num)
-                        if must_flush:
-                            info_logger.info("[ProcessRun] Flushing buffer...")
-                            tools.number_recognizer.flush_buffer(tools.trocr_buffer)
-                    
-                    player_numbers = numbers_data.get(player_id, {})
-                    time_reporter.stop("number recognizer")
-                    if not player_numbers:
-                        info_logger.info(
-                            f"[ProcessRun] No se encontraron números para reconocer al jugador {player_id}."
-                        )
-                        continue
-
-                    player_number = max(player_numbers, key=player_numbers.get) # type: ignore
-                    if player_number is not None:
-                        info_logger.info(
-                            f"[ProcessRun] Número de jugador reconocido: {player_number}"
-                        )
-                        info_logger.info(f"[ProcessRun] Paso 7: Reconociendo número de jugador: {player_number}")
-                        player_db_id = tools.player_records.get_player_id(int(f'{last_state.player_id}'))
-                        if player_db_id and player_db_id != -1:
-                            tools.player_records.patch(
-                                player_db_id,
-                                {
-                                    "shirt_number": player_number
-                                }
-                            )
-                            info_logger.info(f"[ProcessRun] Número de jugador actualizado exitosamente: {player_number}")
                         else:
-                            error_logger.error(f"[Frame {frame_num}] No se encontró Player con player_id {last_state.player_id}")
+                            proc = tools.number_recognizer._preprocess(crop)
+                            info_logger.info(
+                                "[ProcessRun] Reconociendo número de jugador..."
+                            )
+
+                            def update_best_num(num: Optional[int], conf: float):
+                                if num is not None and conf > 0.35:
+                                    debug_logger.debug(
+                                        f"[ProcessRun] Número {num} con confianza "
+                                        f"{conf:.4f} añadido al jugador {player_id}."
+                                    )
+                                    numbers_data[player_id][num] += conf
+                            
+                            if proc is not None:
+                                must_flush = tools.trocr_buffer.push(proc, update_best_num)
+                                if must_flush:
+                                    info_logger.info("[ProcessRun] Flushing buffer...")
+                                    tools.number_recognizer.flush_buffer(tools.trocr_buffer)
+                        
+                        player_numbers = numbers_data.get(player_id, {})
+                        if player_numbers:
+                            player_number = max(player_numbers, key=player_numbers.get) # type: ignore
+                            if player_number is not None:
+                                info_logger.info(
+                                    f"[ProcessRun] Número de jugador reconocido: {player_number}"
+                                )
+                                info_logger.info(f"[ProcessRun] Paso 7: Reconociendo número de jugador: {player_number}")
+                                player_db_id = tools.player_records.get_player_id(player_id)
+                                if player_db_id and player_db_id != -1:
+                                    tools.player_records.patch(
+                                        player_db_id,
+                                        {
+                                            "shirt_number": player_number
+                                        }
+                                    )
+                                    tools.analysis_data_collector.update_row(
+                                        frame=frame_num,
+                                        track_id=player_id,
+                                        shirt_number=player_number)
+                                    info_logger.info(f"[ProcessRun] Número de jugador actualizado exitosamente: {player_number}")
+                                else:
+                                    error_logger.error(f"[Frame {frame_num}] No se encontró Player con player_id {player_id}")
+                    time_reporter.stop("number recognizer")
                 else:
                     info_logger.info("[ProcessRun] No hay último jugador para reconocer número.")
             except Exception as e:
@@ -297,6 +280,8 @@ def process_frame(
             try:
                 time_reporter.start("goal scorer")
                 detections  = goal_yolo.predict(frame)
+                frame_anotated = goal_yolo.annotate(frame, detections)
+                # Modify the model path and versions, also update to only detect goals
                 goal_detected, scorer_player_id = goal_scorer.updateScorer(
                     db=db,
                     detections=detections,
@@ -310,44 +295,33 @@ def process_frame(
                 )
             except:
                 raise Exception("Error al reconocer el Arco y detectar goles.") 
+            
+            for detected_object in value_store.globals.detected_object:
+                detected_object_name = detected_object.name
+                detected_object_id = detected_object.id
+            
+                if detected_object_name == "player":
+                    state = analysis_context.tools.player_records.get_state_by_id(detected_object_id)
+                    if state is not None:
+                        player = analysis_context.tools.player_records.get_player(int(f"{state.player_id}"))
+                        bbox = state.get_bbox()
+                        info_logger.info(f"[PlayerDB] Bounding box: {bbox}, de tipo {type(bbox)}")
+                        if bbox is not None and len(bbox) > 0:
+                            speed = float(f"{state.speed}")
+                            distance = float(f"{state.distance}")
+                            number = f"{player.shirt_number if player is not None else ""}"
+                            track_id = int(f"{state.player_id}")
+                            frame_anotated = value_store.globals.video_anotator.annotate(frame_anotated, bbox, "player", f"id {track_id}, {number}, {speed:.2f} km/h, {distance:.2f} m, conf {detected_object.confidence:.2f}")
+                if detected_object_name == "ball":
+                    state = analysis_context.tools.ball_records.get_by_id(detected_object_id)
+                    if state is not None:
+                        bbox = state.get_bbox()
+                        if bbox is not None and len(bbox) > 0:
+                            frame_anotated = value_store.globals.video_anotator.annotate(frame_anotated, bbox, "ball", f"ball, conf: {detected_object.confidence:.2f}")
 
-            # -------------------------------------------------------
-            # 7. EXTRAER IMÁGENES
-            # -------------------------------------------------------
-            try:
-                info_logger.info(
-                    "[ProcessRun] Paso 7: Extrayendo imágenes de jugadores..."
-                )
-                last_state = tools.player_records.get_last()
-                last_player = (
-                    tools.player_records.get_player(int(f"{last_state.player_id}"))
-                    if last_state
-                    else None
-                )
-                if not last_state and not last_player:
-                    info_logger.info(
-                        "[ProcessRun] No hay jugador para extraer imágenes, se continúa."
-                    )
-                    continue
-                
-                time_reporter.start("extract player images")
-                extract_player_images(
-                    frame=frame,
-                    frame_index=frame_num,
-                    player_state=last_state,
-                    player=last_player,
-                    output_folder=OUTPUT_IMAGES_DIR.as_posix(),
-                )
-                time_reporter.stop("extract player images")
+            value_store.globals.video_anotator.write_and_show(frame_anotated, frame_num)
+            value_store.globals.reset_detected_object()
 
-                info_logger.info(
-                    f"[Frame {frame_num}] Imágenes de jugador extraídas correctamente."
-                )
-            except Exception as e:
-                error_logger.error(
-                    f"[Frame {frame_num}] Error extrayendo imágenes: {e}"
-                )
-                raise e
 
             # -------------------------------------------------------
             # 8. EXPORTAR DATOS DEL FRAME, accion independiente

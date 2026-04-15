@@ -1,6 +1,9 @@
 import logging
 from typing import List, Tuple, Union
 
+import cv2
+import numpy as np
+from sklearn.cluster import DBSCAN
 import supervision as sv
 from cv2.typing import MatLike
 import torch
@@ -10,7 +13,6 @@ from ultralytics.models import YOLO
 from app.core.config import BATCH_SIZE, MODEL_USE_HALF_PRECISION
 from app.entities.interfaces.tracker_base import Tracker
 from app.entities.models.PlayerModels import Player, PlayerState
-from app.entities.trackers import ball_tracker
 from app.entities.trackers.player_tracker import PlayerTracker
 from app.entities.utils.singleton import AbstractSingleton
 from app.infraestructure.services.bbox_processor_service import get_center_of_bbox
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.logger import get_logger
 
+import app.entities.utils.global_values_store as value_store
 
 class TrackerServiceBase(metaclass=AbstractSingleton):
     """
@@ -37,17 +40,17 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
 
         self.ball_tracker = sv.ByteTrack(
             frame_rate=25,
-            lost_track_buffer=20,
-            track_activation_threshold=0.5,
-            minimum_matching_threshold=0.9,
-            minimum_consecutive_frames=1,
+            lost_track_buffer=8,
+            track_activation_threshold=0.15,
+            minimum_matching_threshold=0.5,
+            minimum_consecutive_frames=3,
         )
         self.player_tracker = sv.ByteTrack(
-            frame_rate=25,
-            lost_track_buffer=20,
-            track_activation_threshold=0.5,
-            minimum_matching_threshold=0.9,
-            minimum_consecutive_frames=1,
+            frame_rate=int(value_store.globals.fps),
+            lost_track_buffer=50000,
+            track_activation_threshold=0.4,
+            minimum_matching_threshold=0.5,
+            minimum_consecutive_frames=8,
         )
         self.tracker_factory = TrackerFactory(
             ball_model=self.ball_model,
@@ -97,6 +100,45 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         # No suprime excepciones
         return False
 
+    def apply_dbscan_to_detections(
+    self,
+    detections: sv.Detections,
+    eps: float = 30,
+    min_samples: int = 1
+) -> sv.Detections:
+        """
+        Agrupa detecciones por cercanía espacial usando DBSCAN.
+        - eps: distancia máxima entre puntos para considerarse vecinos
+        - min_samples: mínimo para formar cluster
+        """
+
+        if len(detections) == 0:
+            return detections
+
+        centers = []
+        for bbox in detections.xyxy:
+            x1, y1, x2, y2 = bbox
+            centers.append([(x1 + x2) / 2, (y1 + y2) / 2])
+
+        centers = np.array(centers)
+
+        clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(centers)
+        labels = clustering.labels_
+
+        unique_indices = []
+
+        for label in set(labels):
+            cluster_indices = np.where(labels == label)[0]
+
+            # Estrategia: elegir bbox con mayor área o confianza
+            best_idx = cluster_indices[0]
+            unique_indices.append(best_idx)
+
+        # Filtrar detecciones
+        filtered = detections[unique_indices]
+
+        return filtered
+
     def reset_tracking(self) -> None:
         """
         Reinicia el tracker (p. ej. cuando se corta el stream o hay un gap grande)
@@ -106,8 +148,8 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         self.logger.info("ByteTrack reset.")
 
     def detect_frames(
-        self, frames: Union[List[MatLike], MatLike], conf: float = 0.1
-    ) -> Tuple[List[sv.Detections], List[sv.Detections]]:
+        self, frame: MatLike
+    ):
         """
         Detecta en una lista de frames o un solo frame.
         Retorna una tupla con dos listas de supervisions.Detections, correspondientes
@@ -116,28 +158,30 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
 
         print("Detectando en frames...")
         return self.ball_model(
-            frames,
-            conf=0.25,
-            iou=0.8,
+            frame,
+            imgsz=640,
+            conf=0.35,
+            iou=0.4,
             agnostic_nms=False,
-            max_det=20,
+            device=self._device,
+            max_det=50,
             nms=True,
             verbose=False,
-            batch=BATCH_SIZE
         ), self.player_model(
-            frames,
-            conf=0.4,
-            iou=0.6,
+            frame,
+            imgsz=640,
+            conf=0.15,
+            iou=0.85,
+            device=self._device,
             agnostic_nms=False,
-            max_det=20,
+            max_det=100,
             nms=True,
             verbose=False,
-            batch=BATCH_SIZE
         )
 
     def get_object_tracks(
         self,
-        frames: List[MatLike],
+        frame: MatLike,
         frame_num: int,
         db: Session,
         conf: float = 0.1,
@@ -151,7 +195,8 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         """
         try:
             self.logger.info("Detectando en frame...")
-            ball_results, player_results = self.detect_frames(frames, conf=conf)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            ball_results, player_results = self.detect_frames(frame)
 
             if not ball_results and not player_results:
                 self.logger.info("No se obtuvieron resultados de detección.")
@@ -168,12 +213,12 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             player_cls_names_inv = {v: k for k, v in player_cls_names.items()}
             ball_cls_names_inv = {v: k for k, v in ball_cls_names.items()}
             
-            player_detection = sv.Detections.from_ultralytics(player_result)
-            ball_detection = sv.Detections.from_ultralytics(ball_result)
+            # player_detection = sv.Detections(xyxy=player_result.xyxy, confidence=player_result.confidence, class_id=np.zeros(len(player_result), dtype=int))
+            # ball_detection = sv.Detections(xyxy=ball_result.xyxy, confidence=ball_result.confidence, class_id=np.zeros(len(ball_result), dtype=int))
 
-            self.logger.info("Actualizando ByteTrack...")
-            player_tracked = self.player_tracker.update_with_detections(player_detection)
-            ball_tracked = self.ball_tracker.update_with_detections(ball_detection)
+            # self.logger.info("Actualizando ByteTrack...")
+            # player_tracked = self.player_tracker.update_with_detections(player_detection)
+            # ball_tracked = self.ball_tracker.update_with_detections(ball_detection)
 
             for tracker in self.get_trackers():
                 try:
@@ -189,18 +234,16 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
                     is_player_tracker = isinstance(tracker, PlayerTracker)
                     if is_player_tracker:    
                         tracker.get_object_tracks(
-                            detection_with_tracks=player_tracked,
+                            detections=player_results,
                             cls_names_inv=player_cls_names_inv,
                             frame_num=frame_num,
-                            detection_supervision=player_detection,
                             db=db,
                         )
                     else:
                         tracker.get_object_tracks(
-                            detection_with_tracks=ball_tracked,
+                            detections=ball_results,
                             cls_names_inv=ball_cls_names_inv,
                             frame_num=frame_num,
-                            detection_supervision=ball_detection,
                             db=db,
                         )
                 except Exception as e:
@@ -242,7 +285,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         from app.entities.collections import TrackCollectionBall
 
         try:
-            collection = TrackCollectionBall(db)
+            collection = TrackCollectionBall()
             collection.patch(int(f"{track.id}"), {"x": position[0], "y": position[1]})
         except Exception as e:
             self.logger.exception(f"Error adding to player {track}: {e}")
@@ -254,7 +297,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         try:
             from app.entities.collections import TrackCollectionPlayer
 
-            collection = TrackCollectionPlayer(db)
+            collection = TrackCollectionPlayer()
             
             collection.patch_state(
                 frame_index=int(f"{track.frame_index}"),

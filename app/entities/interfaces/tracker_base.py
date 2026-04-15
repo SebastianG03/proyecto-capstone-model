@@ -1,4 +1,5 @@
 import logging
+from typing import List
 
 import supervision as sv
 from ultralytics.models import YOLO
@@ -17,26 +18,26 @@ class Tracker:
     def __init__(self, model: YOLO):
         self.model: YOLO = model
         self.logger = get_logger(logging.DEBUG)
+        self.tracker = sv.ByteTrack(
+            frame_rate=30,
+            lost_track_buffer=60,
+            track_activation_threshold=0.15,
+            minimum_matching_threshold=0.9,
+            minimum_consecutive_frames=1
+        )
 
     def _bbox_to_center(self, bbox: list) -> tuple[float, float]:
         self.logger.info("[Tracker] Convirtiendo bbox a centro...")
         x1, y1, x2, y2 = bbox
-        self.logger.info(
-            f"[Tracker] Bbox recibida: {bbox}, "
-            f"coordenadas extraídas: x1={x1}, y1={y1}, x2={x2}, y2={y2}"
-        )
         cx = float((x1 + x2) / 2.0)
-        self.logger.info(f"[Tracker] cx={cx}")
         cy = float((y1 + y2) / 2.0)
-        self.logger.info(f"[Tracker] cy={cy}")
         return cx, cy
 
     def get_object_tracks(
         self,
-        detection_with_tracks: sv.Detections,
+        detections: List,
         cls_names_inv: dict[str, int],
         frame_num: int,
-        detection_supervision: sv.Detections,
         db: Session,
     ) -> None:
         """

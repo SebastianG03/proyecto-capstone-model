@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.entities.models.PlayerModels import Player
 from app.entities.interfaces import Diagram
 from app.entities.models import PlayerState
-from app.entities.utils.tools_context import AnalysisContext
+import app.entities.utils.tools_context as context 
 from app.utils.routes import OUTPUT_VIDEOS_DIR
 from app.logger import debug_logger
 
@@ -36,7 +36,7 @@ class HeatmapDrawer(Diagram):
 
     def __init__(self, db: Session):
         super().__init__(db)
-        self.tools = AnalysisContext().tools
+        self.tools = context.analysis_context.tools
         base = OUTPUT_VIDEOS_DIR
         self.players_path = base / "players"
         for p in [base, self.players_path]:

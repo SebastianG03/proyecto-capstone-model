@@ -1,10 +1,9 @@
 import logging
 
-from app.core.config import DEBUG
-
 def get_logger(log_level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger("app_info")
     logger.setLevel(log_level)
+
     
     if logger.handlers:
         logger.handlers.clear()
@@ -17,7 +16,7 @@ def get_logger(log_level: int = logging.INFO) -> logging.Logger:
     console_handler =logging.StreamHandler()
     console_handler.setLevel(log_level)
     console_handler.setFormatter(formatter)
-    
+
     file_handler = logging.FileHandler("model_execution.log", mode='w')
     file_handler.setLevel(log_level)
     file_handler.setFormatter(formatter)
