@@ -2,6 +2,7 @@ from pathlib import Path
 
 from app.core.config import BALL_MODEL_NAME, DEPTH_MODEL_NAME, GOAL_MODEL_NAME, PLAYER_MODEL_NAME
 
+
 BASE_DIR = Path("app")
 BASE_RES_DIR = BASE_DIR / "res"
 
@@ -21,7 +22,9 @@ PLAYER_MODEL_PATH = MODELS_DIR / PLAYER_MODEL_NAME
 MODEL_GOALS_PATH = MODELS_DIR / GOAL_MODEL_NAME
 TROCR_PATH = MODELS_DIR / "trocr"
 DEPTH_MODEL_PATH = MODELS_DIR / DEPTH_MODEL_NAME
-
+TRACKER_CONFIG_PATH = MODELS_DIR / "tracker"
+BYTETRACK_CONFIG_PATH = TRACKER_CONFIG_PATH / "bytetrack.yaml"
+PLAYER_XGB_MODEL = MODELS_DIR / "player_XGB"
 
 def ensure_directories():
     """
@@ -39,7 +42,9 @@ def ensure_directories():
         ANOTATED_OUTPUT_IMAGES,
         METRICS_DIR,
         MEMORY_TRACKER_DIR,
-        DETECTED_OBJECTS_METRICS_DIR
+        DETECTED_OBJECTS_METRICS_DIR,
+        TRACKER_CONFIG_PATH,
+        PLAYER_XGB_MODEL
     ]:
         if not directory.exists():
             directory.mkdir(parents=True, exist_ok=True)

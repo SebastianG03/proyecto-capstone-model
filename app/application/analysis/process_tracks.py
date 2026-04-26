@@ -24,12 +24,12 @@ def process_tracks_and_position(
             if last_track is None:
                 logger.info("No hay track para actualizar, saltando...")
                 continue
-            logger.info(f"Último track ID: {last_track.to_dict().get('player_id', None)}")
+            logger.info(f"ultimo track ID: {last_track.to_dict().get('player_id', None)}")
 
-            logger.info("Añadiendo posición al track...")
+            logger.info("Añadiendo posicion al track...")
             tracker.add_position_to_track(db, last_track)
 
-            logger.info("Ajustando posiciones según movimiento de cámara...")
+            logger.info("Ajustando posiciones segun movimiento de camara...")
             tools.camera_movement_estimator.add_adjust_positions_to_tracks(
                 db=db,
                 camera_movement_per_frame=camera_movement,
@@ -39,7 +39,7 @@ def process_tracks_and_position(
             )
             logger.info("Posiciones ajustadas.")
 
-            logger.info("Aplicando transformación de vista...")
+            logger.info("Aplicando transformacion de vista...")
             tools.view_transformer.add_transformed_positions(db)
     except Exception as e:
         logger.error(f"Error procesando tracks y posiciones: {e}")

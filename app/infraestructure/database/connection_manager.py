@@ -20,19 +20,19 @@ class ConnectionManager():
 
     def create_session(self):
         """
-        Crea una sesión de base de datos que se puede utilizar para interactuar
-        con la base de datos. La sesión se cierra automáticamente cuando se
-        sale del ámbito de la sesión.
+        Crea una sesion de base de datos que se puede utilizar para interactuar
+        con la base de datos. La sesion se cierra automaticamente cuando se
+        sale del ambito de la sesion.
 
         Returns:
-            Session: Sesión de base de datos.
+            Session: Sesion de base de datos.
         """
         return Session(self.engine, expire_on_commit=False, autoflush=False)
         
     def close_session(self):
         """
-        Cierra la sesión actual de la base de datos.
-        Se llama automáticamente cuando se sale del ámbito de la sesión.
+        Cierra la sesion actual de la base de datos.
+        Se llama automaticamente cuando se sale del ambito de la sesion.
         """
         self.session.remove()
     
@@ -40,9 +40,9 @@ class ConnectionManager():
         """
         Crea una base de datos temporal para el partido especificado por match_id.
         
-        Se crea un motor de base de datos con una sesión de base de datos
-        que se puede utilizar para interactuar con la base de datos. La sesión
-        se cierra automáticamente cuando se sale del ámbito de la sesión.
+        Se crea un motor de base de datos con una sesion de base de datos
+        que se puede utilizar para interactuar con la base de datos. La sesion
+        se cierra automaticamente cuando se sale del ambito de la sesion.
         
         La base de datos se crea en la carpeta especificada por DATABASE_DIR
         y se llama "temp_db_<match_id>.sqlite".

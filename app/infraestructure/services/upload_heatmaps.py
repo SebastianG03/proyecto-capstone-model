@@ -13,12 +13,12 @@ def upload_heatmaps_for_extracted_players(
     db: Session, match_id: int
 ) -> dict[int, str]:
     """
-    Sube los heatmaps de los jugadores extraídos a AWS S3.
+    Sube los heatmaps de los jugadores extraidos a AWS S3.
 
     Parameters:
-    db (Session): Sesión de la base de datos.
+    db (Session): Sesion de la base de datos.
     match_id (int): ID del partido.
-    extracted_player_ids (set): Conjunto de IDs de los jugadores extraídos.
+    extracted_player_ids (set): Conjunto de IDs de los jugadores extraidos.
 
     Returns:
     dict[int, str]: Diccionario con los IDs de los jugadores como claves y las
@@ -37,7 +37,7 @@ def upload_heatmaps_for_extracted_players(
         jobs = []
         for file in files_in_folder:
             if not file.exists() or file.stat().st_size == 0:
-                info_logger.info(f"[Upload Heatmaps] Archivo inválido o vacío: {file.name}")
+                info_logger.info(f"[Upload Heatmaps] Archivo invalido o vacio: {file.name}")
                 continue
 
             file_bytes = file.read_bytes()

@@ -17,9 +17,9 @@ import traceback
 
 async def process_video_async(video_name: str, match_id: int, color: str):
     """
-    Ejecuta el análisis en segundo plano con una BD en memoria aislada.
+    Ejecuta el analisis en segundo plano con una BD en memoria aislada.
     """
-    info_logger.info(f"Iniciando análisis en background para video: {video_name}, match_id: {match_id}")
+    info_logger.info(f"Iniciando analisis en background para video: {video_name}, match_id: {match_id}")
     db_path = BASE_RES_DIR / "database" / f"temp_db_{match_id}.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db_path.touch(exist_ok=True)
@@ -28,7 +28,7 @@ async def process_video_async(video_name: str, match_id: int, color: str):
     
     @event.listens_for(connection_manager.engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
-        """Configura pragmas de SQLite para mejor rendimiento y recuperación de bloqueos"""
+        """Configura pragmas de SQLite para mejor rendimiento y recuperacion de bloqueos"""
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=30000")
@@ -38,13 +38,13 @@ async def process_video_async(video_name: str, match_id: int, color: str):
     
 
     try:
-        info_logger.info(f"Ejecutando análisis en background para video: {video_name}")
+        info_logger.info(f"Ejecutando analisis en background para video: {video_name}")
         _ = await process_run(video_name=video_name, match_id=match_id, color=color)
-        info_logger.info("Análisis finalizado.")
+        info_logger.info("Analisis finalizado.")
     except Exception as e:
-        error_logger.error(f"Error en análisis: {str(e)}")
+        error_logger.error(f"Error en analisis: {str(e)}")
     finally:
-        info_logger.info("Cerrando sesión de base de datos y liberando recursos.")
+        info_logger.info("Cerrando sesion de base de datos y liberando recursos.")
         connection_manager.close_session()
         if not DEBUG:
             db_path.unlink()
@@ -118,7 +118,7 @@ async def export_data(
             player_export_data.append(dict_values)
             if (i + 1) % 1000 == 0:
                 print(f"Exportados {i + 1} registros de PlayerState...")
-        print("Exportación de datos completada.")
+        print("Exportacion de datos completada.")
 
         file_stats = OUTPUT_REPORTS_DIR / f"stats_match_{match_id}.json"
         file_stats.parent.mkdir(parents=True, exist_ok=True)
@@ -142,7 +142,7 @@ async def export_data(
         )
         resp.raise_for_status()
         debug_logger.debug(
-            f"Notificación enviada, respuesta: {resp.status_code} - {resp.text}"
+            f"Notificacion enviada, respuesta: {resp.status_code} - {resp.text}"
         )
     except httpx.HTTPError as http_err:
         print(f"Error HTTP al exportar datos: {http_err}")

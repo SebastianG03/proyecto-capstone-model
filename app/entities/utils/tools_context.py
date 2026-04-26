@@ -10,7 +10,7 @@ class AnalysisContext(metaclass=singleton.Singleton):
     @property
     def tools(self) -> analysis_tools.AnalysisTools:
         if self._tools is None:
-            raise RuntimeError("AnalysisTools no ha sido inicializado aún.")
+            raise RuntimeError("AnalysisTools no ha sido inicializado aun.")
         return self._tools
 
     @tools.setter

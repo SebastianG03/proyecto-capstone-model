@@ -17,7 +17,7 @@ from app.logger import debug_logger
 class DepthEstimator:
     """
     Calculadora de profundidad usando MiDaS + MediaPipe Pose (API Tasks).
-    Calcula profundidad cada n_frames * 10 (cada ~10 segundos) o cuando cambia la escala de cámara.
+    Calcula profundidad cada n_frames * 10 (cada ~10 segundos) o cuando cambia la escala de camara.
     """
 
     def __init__(
@@ -48,7 +48,7 @@ class DepthEstimator:
         self.last_camera_scale = camera_scale
         
         self.logger.info(
-            f"[DepthCalculator] Inicializado: cálculo cada {self.frames_per_depth_calc} frames "
+            f"[DepthCalculator] Inicializado: calculo cada {self.frames_per_depth_calc} frames "
             f"({depth_calculation_interval_seconds}s), escala inicial={camera_scale}"
         )
         
@@ -97,7 +97,7 @@ class DepthEstimator:
         
         Se calcula cuando:
         1. Han pasado suficientes frames (cada n_frames * 10 segundos)
-        2. La escala de la cámara ha cambiado significativamente (>5%)
+        2. La escala de la camara ha cambiado significativamente (>5%)
         """
         if self.last_calculation_frame < 0:
             self.logger.debug(f"[DepthCalculator] Primer frame, calculando profundidad")
@@ -116,7 +116,7 @@ class DepthEstimator:
         if frames_since_last >= self.frames_per_depth_calc:
             self.logger.debug(
                 f"[DepthCalculator] Intervalo alcanzado: {frames_since_last} frames "
-                f"desde último cálculo"
+                f"desde ultimo calculo"
             )
             return True
 
@@ -127,11 +127,11 @@ class DepthEstimator:
         Detecta landmarks de pose y retorna el centro de la cintura (hips).
         
         Args:
-            roi_frame: Frame de la región del jugador (BGR)
+            roi_frame: Frame de la region del jugador (BGR)
             
         Returns:
             (x_norm, y_norm) coordenadas normalizadas [0,1] del centro de cintura,
-            o None si no se detectó pose.
+            o None si no se detecto pose.
         """
         rgb_frame = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
@@ -166,16 +166,16 @@ class DepthEstimator:
         current_camera_scale: float
     ) -> Optional[float]:
         """
-        Calcula profundidad para un jugador específico usando el centro de su cintura.
+        Calcula profundidad para un jugador especifico usando el centro de su cintura.
         
         Args:
             frame: Frame completo (BGR)
             bbox: [x1, y1, x2, y2] del jugador
-            frame_num: Número de frame actual
-            current_camera_scale: Escala actual de la cámara
+            frame_num: Numero de frame actual
+            current_camera_scale: Escala actual de la camara
             
         Returns:
-            Profundidad en metros o None si no se calculó/no se detectó pose
+            Profundidad en metros o None si no se calculo/no se detecto pose
         """
         self.logger.info("[DepthCalculator] Calculando profundidad para jugador...")
         if not self.should_calculate_depth(frame_num, current_camera_scale):
@@ -193,7 +193,7 @@ class DepthEstimator:
         self.logger.info(f"[DepthCalculator] Coordenadas extraidas del bbox: x1={x1}, y1={y1}, x2={x2}, y2={y2}")
 
         if x2 <= x1 or y2 <= y1:
-            self.logger.warning(f"[DepthCalculator] BBox inválido: {bbox}")
+            self.logger.warning(f"[DepthCalculator] BBox invalido: {bbox}")
             return None
 
         roi = frame[y1:y2, x1:x2]
@@ -203,7 +203,7 @@ class DepthEstimator:
         waist_center_norm = self._get_waist_center(roi)
 
         if waist_center_norm is None:
-            self.logger.debug(f"[DepthCalculator] Frame {frame_num}: No se detectó pose, usando centro del bbox")
+            self.logger.debug(f"[DepthCalculator] Frame {frame_num}: No se detecto pose, usando centro del bbox")
             waist_x = (x1 + x2) / 2.0
             waist_y = (y1 + y2) / 2.0
         else:
@@ -221,7 +221,7 @@ class DepthEstimator:
         return depth
 
     def _calculate_depth_at_point(self, frame: np.ndarray, x: int, y: int) -> float:
-        """Calcula profundidad en un punto específico del frame usando MiDaS."""
+        """Calcula profundidad en un punto especifico del frame usando MiDaS."""
         output_norm = self._process_frame_midas(frame)
         h, w = output_norm.shape
         
@@ -260,7 +260,7 @@ class DepthEstimator:
         return output_norm
     
     def _apply_ema_filter(self) -> float:
-        """Aplica filtro de media móvil exponencial."""
+        """Aplica filtro de media movil exponencial."""
         filtered_depth = self.alpha * self.current_depth + (1 - self.alpha) * self.previous_depth
         if self.previous_depth == filtered_depth:
             return self.previous_depth

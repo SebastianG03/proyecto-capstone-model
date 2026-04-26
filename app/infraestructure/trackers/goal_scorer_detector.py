@@ -35,7 +35,7 @@ class BallPossessionSnapshot:
 @dataclass
 class BallTrajectoryPoint:
     frame: int
-    position: Tuple[float, float]  # centro del balón
+    position: Tuple[float, float]  # centro del balon
     velocity: Optional[Tuple[float, float]] = None
 
 
@@ -59,22 +59,22 @@ class Goal:
 
 class ShotDetector:
     """
-    Detecta TIROS AL ARCO (no solo goles) y asigna al jugador que realizó el tiro.
+    Detecta TIROS AL ARCO (no solo goles) y asigna al jugador que realizo el tiro.
     
-    Lógica:
-    1. Detecta cuando el balón se mueve rápidamente hacia el arco
-    2. Determina si fue un tiro (vs pase) basado en velocidad y dirección
-    3. Registra el jugador que tuvo posesión justo antes del tiro
+    Logica:
+    1. Detecta cuando el balon se mueve rapidamente hacia el arco
+    2. Determina si fue un tiro (vs pase) basado en velocidad y direccion
+    3. Registra el jugador que tuvo posesion justo antes del tiro
     4. Clasifica el resultado: gol, atajado, desviado, etc.
     """
 
-    # Ventana de posesión para identificar al tirador (frames antes del tiro)
+    # Ventana de posesion para identificar al tirador (frames antes del tiro)
     POSSESSION_WINDOW = 15
     
-    # Ventana de trayectoria para analizar dirección del balón
+    # Ventana de trayectoria para analizar direccion del balon
     TRAJECTORY_WINDOW = 10
     
-    # Umbral de velocidad mínima para considerar un "tiro" (pixels/frame)
+    # Umbral de velocidad minima para considerar un "tiro" (pixels/frame)
     MIN_SHOT_SPEED = 15.0
     
     # Umbral de velocidad para considerar un "potente" (ayuda a distinguir de pases)
@@ -86,7 +86,7 @@ class ShotDetector:
     # Frames de cooldown entre tiros detectados (evitar duplicados)
     SHOT_COOLDOWN_FRAMES = 30
     
-    # Umbral de confianza para detección de balón/arco
+    # Umbral de confianza para deteccion de balon/arco
     CONFIDENCE_THRESHOLD = 0.5
 
     def __init__(
@@ -102,12 +102,12 @@ class ShotDetector:
         self.goal_zone_expansion = goal_zone_expansion
         self.target_name = "soccer-goal"
 
-        # Historial de posesión
+        # Historial de posesion
         self._possession_history: deque[BallPossessionSnapshot] = deque(
             maxlen=self.POSSESSION_WINDOW
         ) # limitar memoria
         
-        # Trayectoria del balón
+        # Trayectoria del balon
         self._ball_trajectory: deque[BallTrajectoryPoint] = deque(
             maxlen=self.TRAJECTORY_WINDOW
         ) # limitar memoria
@@ -155,16 +155,16 @@ class ShotDetector:
 
     @staticmethod
     def _calculate_direction(trajectory: deque[BallTrajectoryPoint]) -> Optional[Tuple[float, float]]:
-        """Calcula la dirección promedio del movimiento del balón"""
+        """Calcula la direccion promedio del movimiento del balon"""
         if len(trajectory) < 3:
             return None
         
-        # Usar regresión lineal simple para dirección
+        # Usar regresion lineal simple para direccion
         points = list(trajectory)
         x_coords = [p.position[0] for p in points]
         y_coords = [p.position[1] for p in points]
         
-        # Vector de dirección (último punto - primer punto)
+        # Vector de direccion (ultimo punto - primer punto)
         dx = x_coords[-1] - x_coords[0]
         dy = y_coords[-1] - y_coords[0]
         
@@ -182,7 +182,7 @@ class ShotDetector:
         players: List[PlayerState],
     ) -> Optional[int]:
         """
-        Guarda el jugador más cercano al balón EN CADA FRAME.
+        Guarda el jugador mas cercano al balon EN CADA FRAME.
         Retorna el player_id del mejor candidato o None.
         """
         if ball_bbox is None:
@@ -214,8 +214,8 @@ class ShotDetector:
 
     def _most_likely_shooter(self) -> Optional[int]:
         """
-        Devuelve el player_id más frecuente en la ventana de posesión.
-        Este es el jugador que probablemente realizó el tiro.
+        Devuelve el player_id mas frecuente en la ventana de posesion.
+        Este es el jugador que probablemente realizo el tiro.
         """
         if not self._possession_history:
             return None
@@ -245,13 +245,13 @@ class ShotDetector:
         frame: int, 
         ball_bbox: Optional[list[float]]
     ) -> None:
-        """Actualiza el historial de posiciones del balón"""
+        """Actualiza el historial de posiciones del balon"""
         if ball_bbox is None:
             return
             
         center = self._bbox_center(ball_bbox)
         
-        # Calcular velocidad si tenemos posición anterior
+        # Calcular velocidad si tenemos posicion anterior
         velocity = None
         if self._prev_ball_pos is not None and frame > self._prev_frame:
             dt = frame - self._prev_frame
@@ -271,7 +271,7 @@ class ShotDetector:
         goal_bbox: list[float]
     ) -> Tuple[bool, float, float]:
         """
-        Determina si el balón se está moviendo hacia el arco.
+        Determina si el balon se esta moviendo hacia el arco.
         Retorna: (es_hacia_arco, velocidad, distancia_al_arco)
         """
         if len(self._ball_trajectory) < 3:
@@ -285,7 +285,7 @@ class ShotDetector:
         vx, vy = recent_points[-1].velocity
         speed = np.sqrt(vx**2 + vy**2)
         
-        # Posición actual y dirección
+        # Posicion actual y direccion
         current_pos = recent_points[-1].position
         goal_center = self._bbox_center(goal_bbox)
         
@@ -308,7 +308,7 @@ class ShotDetector:
         
         dot_product = direction[0] * dx_norm + direction[1] * dy_norm
         
-        # Considerar "hacia arco" si el producto punto es > 0.5 (ángulo < 60 grados)
+        # Considerar "hacia arco" si el producto punto es > 0.5 (angulo < 60 grados)
         is_towards = dot_product > 0.5 and speed > self.MIN_SHOT_SPEED
         
         return is_towards, speed, dist_to_goal
@@ -359,7 +359,7 @@ class ShotDetector:
         
         Returns:
             (shot_detected, shot_event)
-            shot_event es None si no se detectó tiro
+            shot_event es None si no se detecto tiro
         """
         
         if detections is None or len(detections) == 0:
@@ -435,31 +435,31 @@ class ShotDetector:
         
         self._update_ball_trajectory(frame_num, ball_bbox)
 
-        # Obtener jugadores y actualizar posesión
+        # Obtener jugadores y actualizar posesion
         players: List[PlayerState] = context.analysis_context.tools.player_records.get_all_states(frame_index=frame_num)
         # Todo Error el ultimo bbox no siempre va a tener el balon, hay que cambiarlo para verificar una lista de bbox
         current_possession = self._update_possession_cache(frame_num, ball_bbox, players)
         goal_bbox = goal.bbox
 
-        # Verificar si el balón se mueve hacia el arco
+        # Verificar si el balon se mueve hacia el arco
         # Todo Error el ultimo bbox no siempre va a tener el balon, es necesario considerar todos los bbox, esta logica sera pasada a Rust
         is_towards_goal, speed, dist_to_goal = self._is_moving_towards_goal(goal_bbox)
         
         if not is_towards_goal:
             return False, None
         
-        # Verificar cooldown (evitar detectar el mismo tiro múltiples veces)
+        # Verificar cooldown (evitar detectar el mismo tiro multiples veces)
         if frame_num - self._last_shot_frame < self.SHOT_COOLDOWN_FRAMES:
             return False, None
         
-        # Verificar que esté dentro de rango de tiro al arco
+        # Verificar que este dentro de rango de tiro al arco
         if dist_to_goal > self.GOAL_PROXIMITY_THRESHOLD:
             return False, None
 
         # Detectar tiro al arco!
         self._last_shot_frame = frame_num
         
-        # Determinar quién tiró
+        # Determinar quien tiro
         shooter_id = self._most_likely_shooter()
         
         # Determinar resultado
@@ -494,7 +494,7 @@ class ShotDetector:
         return True, shot_event
 
     def _update_player_stats(self, player_id: int, outcome: ShotOutcome, db: Session) -> None:
-        """Actualiza las estadísticas de tiros del jugador en la base de datos"""
+        """Actualiza las estadisticas de tiros del jugador en la base de datos"""
         try:
             collection = TrackCollectionPlayer()
             player_row = collection.get_player(player_id)
@@ -538,7 +538,7 @@ class ShotDetector:
 
 class GoalScorerDetector(ShotDetector):
     """
-    Versión legacy que mantiene la interfaz anterior pero usa ShotDetector internamente.
+    Version legacy que mantiene la interfaz anterior pero usa ShotDetector internamente.
     Solo detecta GOLES, no todos los tiros.
     """
     

@@ -30,7 +30,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
             para considerar un sprint (por defecto 25.0).
             smoothing_window (int): Tamaño de la ventana para suavizar
             las posiciones de los jugadores (por defecto 7).
-            poly_order (int): Orden de la ecuación de Savitzky-Golay para suavizar las posiciones
+            poly_order (int): Orden de la ecuacion de Savitzky-Golay para suavizar las posiciones
             de los jugadores (por defecto 2).
         """
         self.frame_rate = frame_rate
@@ -47,8 +47,8 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
     def _smooth_positions(self, positions: List[np.ndarray]) -> np.ndarray:
         """
         Suaviza las posiciones de los jugadores aplicando una ventana de Savitzky-Golay.
-        Si no se puede aplicar la suavización (n < self.smoothing_window),
-        se devuelve la última posición.
+        Si no se puede aplicar la suavizacion (n < self.smoothing_window),
+        se devuelve la ultima posicion.
         """
         n = len(positions)
         if n < self.smoothing_window:
@@ -84,10 +84,10 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
         db: Session,
     ) -> None:
         """
-        Procesa un track de un jugador y calcula velocidad, aceleración y distancia total.
-        Se encarga de suavizar las posiciones del usuario, calcular la velocidad y aceleración,
+        Procesa un track de un jugador y calcula velocidad, aceleracion y distancia total.
+        Se encarga de suavizar las posiciones del usuario, calcular la velocidad y aceleracion,
         y de validar los resultados para asegurar que se encuentren dentro de los rangos
-        de velocidad y aceleración permitidos. También se encarga de persistir los resultados
+        de velocidad y aceleracion permitidos. Tambien se encarga de persistir los resultados
         en la base de datos.
         """
         players = context.analysis_context.tools.player_records.get_states_by_frame(frame_num)
@@ -114,7 +114,7 @@ class SpeedAndDistanceEstimator(metaclass=Singleton):
 
                 if not x or not y:
                     info_logger.warning(
-                        f"[SpeedAndDistance] Posición inválida para track {track_id}"
+                        f"[SpeedAndDistance] Posicion invalida para track {track_id}"
                     )
                     return
 

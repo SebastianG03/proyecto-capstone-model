@@ -14,7 +14,7 @@ class VideoAnotator:
     - Anotaciones visuales
     - Escritura del video
     - Preview en tiempo real
-    - Liberación segura de recursos
+    - Liberacion segura de recursos
     """
 
     def __init__(
@@ -127,7 +127,7 @@ class VideoAnotator:
 
     def write_and_show(self, frame, frame_num: int):
         """
-        Método recomendado.
+        Metodo recomendado.
         """
         self.write(frame, frame_num)
         return self.show(frame)

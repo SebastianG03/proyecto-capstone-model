@@ -41,7 +41,7 @@ class BallAssigner:
         bx, by = float(ball_state["x"]), float(ball_state["y"])
         d_max = self.max_distance_threshold * scale
 
-        # Calcular velocidad del balón si es posible
+        # Calcular velocidad del balon si es posible
         ball_velocity = 0.0
         if self.last_ball_location is not None:
             ball_velocity = (
@@ -64,7 +64,7 @@ class BallAssigner:
             if dist > d_max:
                 continue
 
-            # Calcular ángulo jugador → balón
+            # Calcular angulo jugador → balon
             vx, vy = player.get("vx", 0.0), player.get("vy", 0.0)
             if np.hypot(vx, vy) > 0.1:
                 dir_player = np.arctan2(vy, vx)
@@ -73,7 +73,7 @@ class BallAssigner:
             else:
                 angle_diff = 0.0
 
-            # Puntuación combinada de distancia y ángulo
+            # Puntuacion combinada de distancia y angulo
             score = dist + (angle_diff / self.angle_threshold) * d_max * 0.5
             if angle_diff <= self.angle_threshold:
                 candidates.append((player["player_id"], dist, angle_diff, score))
@@ -81,7 +81,7 @@ class BallAssigner:
         if not candidates:
             return self._release_owner(frame_number)
 
-        # Elegir mejor candidato basado en puntuación
+        # Elegir mejor candidato basado en puntuacion
         best_id, _, _, _ = min(candidates, key=lambda x: x[3])
 
         # Verificar si debemos cambiar de dueño
@@ -100,7 +100,7 @@ class BallAssigner:
         if best_id != self.current_owner and best_id is not None:
             self._change_owner(best_id, frame_number)
 
-        # Actualizar tiempo de posesión
+        # Actualizar tiempo de posesion
         if self.current_owner is not None:
             self.possession_time[self.current_owner] = (
                 self.possession_time.get(self.current_owner, 0.0) + dt
@@ -170,7 +170,7 @@ class BallAssigner:
 
         dist_owner = np.hypot(owner["x"] - bx, owner["y"] - by)
 
-        if ball_velocity > 5.0:  # Ajustar según necesidad
+        if ball_velocity > 5.0:  # Ajustar segun necesidad
             return best_id
 
         if dist_owner <= max_distance * 1.2:

@@ -19,26 +19,26 @@ def assign_ball_to_player(
     logger: logging.Logger
 ):
     try:
-        logger.info("[Assign Ball] Iniciando asignación de balón a jugador...")
-        logger.info(f"[Assign Ball] Colección de jugadores obtenida. Longitud actual: {len(players)}")
+        logger.info("[Assign Ball] Iniciando asignacion de balon a jugador...")
+        logger.info(f"[Assign Ball] Coleccion de jugadores obtenida. Longitud actual: {len(players)}")
         logger.info(
-            f"[Assign Ball] Iterando sobre registros de balón, registros actuales en colección: {len(ball_records)}"
+            f"[Assign Ball] Iterando sobre registros de balon, registros actuales en coleccion: {len(ball_records)}"
         )
         for ball_track in ball_records:
             if not ball_track:
-                logger.info("[Assign Ball] No hay balón en este frame, asignación por defecto.")
+                logger.info("[Assign Ball] No hay balon en este frame, asignacion por defecto.")
                 continue
 
-            logger.info("[Assign Ball] Obteniendo detalle del balón...")
+            logger.info("[Assign Ball] Obteniendo detalle del balon...")
             ball_bbox = ball_track.get_bbox()
             if ball_bbox is None:
-                logger.info("[Assign Ball] No hay balón en este frame, asignación por defecto.")
+                logger.info("[Assign Ball] No hay balon en este frame, asignacion por defecto.")
                 continue
 
-            logger.info("[Assign Ball] Asignando balón a jugador...")
+            logger.info("[Assign Ball] Asignando balon a jugador...")
             dt = dt * value_store.globals.fps if dt > 0 else BATCH_SIZE / value_store.globals.fps
             constant = tools.camera_movement_estimator.get_current_scale() * depth * pixels_to_meters
-            logger.info(f"[Assign Ball] Parámetros para asignación - dt: {dt}, depth: {depth}, pixels_to_meters: {pixels_to_meters}, constant: {constant}")
+            logger.info(f"[Assign Ball] Parametros para asignacion - dt: {dt}, depth: {depth}, pixels_to_meters: {pixels_to_meters}, constant: {constant}")
             assigned_player_id = tools.player_ball_assigner.assign_ball_to_player(
                 players=players,
                 ball_event=ball_track,
@@ -50,7 +50,7 @@ def assign_ball_to_player(
             logger.info(f"[Assign Ball] Jugador asignado ID (track_id): {assigned_player_id}")
 
             if assigned_player_id == -1:
-                logger.info("[Assign Ball] No hay jugador asignado, asignación por defecto.")
+                logger.info("[Assign Ball] No hay jugador asignado, asignacion por defecto.")
                 continue
     except Exception as e:
         raise e

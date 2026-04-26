@@ -12,7 +12,7 @@ async def analyze_video(
 ):
     """
     No espera a que termine el procesamiento:
-    Lanza el análisis en segundo plano.
+    Lanza el analisis en segundo plano.
     """
     try:
         background_tasks.add_task(
@@ -23,8 +23,8 @@ async def analyze_video(
         return {
             "status": "processing",
             "message": (
-                "El video está siendo procesado. "
-                "Los resultados se subirán automáticamente cuando estén listos."
+                "El video esta siendo procesado. "
+                "Los resultados se subiran automaticamente cuando esten listos."
             ),
         }
 

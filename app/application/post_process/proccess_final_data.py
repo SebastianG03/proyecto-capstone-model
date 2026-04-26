@@ -17,7 +17,7 @@ def analyze_match(
     match_id: int = 0,
 ) -> List[Dict]:
     """
-    Analiza los datos de un partido y devuelve estadísticas por jugador.
+    Analiza los datos de un partido y devuelve estadisticas por jugador.
     """
     heatmaps_collection = context.analysis_context.tools.heatmap_points
     # Agrupar estados por jugador
@@ -32,7 +32,7 @@ def analyze_match(
     # Info de jugadores
     player_info = {int(f"{p.player_id}"): p.to_dict() for p in players}
 
-    # Inicializar estadísticas
+    # Inicializar estadisticas
     stats = {}
     for pid in states_by_player:
         if pid not in player_info:
@@ -49,9 +49,9 @@ def analyze_match(
 
         # Calcular tiempo total considerando todos los frames del jugador
         if len(states) >= 2:
-            # Usar el tiempo entre el primer y último frame
+            # Usar el tiempo entre el primer y ultimo frame
             time_s = (states[-1].timestamp_ms - states[0].timestamp_ms) / 1000.0
-            # Validar tiempo máximo: 20 minutos = 1200 segundos
+            # Validar tiempo maximo: 20 minutos = 1200 segundos
             debug_logger.debug(
                 f"[ANALYZE_MATCH] Jugador {pid} - Tiempo total (s): {time_s}"
             )
@@ -64,18 +64,18 @@ def analyze_match(
         debug_logger.debug(
             f"[ANALYZE_MATCH] Jugador {pid} - Velocidad promedio (km/h): {avg_speed_kmh}"
         )
-        # Validar velocidad máxima razonable para un humano (30 km/h)
+        # Validar velocidad maxima razonable para un humano (30 km/h)
         avg_speed_kmh = min(avg_speed_kmh, 30.0)
 
-        # Calcular tiempo de posesión total y promedio
+        # Calcular tiempo de posesion total y promedio
         total_possession_time_ms = sum(s.ball_possession_time or 0.0 for s in states)
         debug_logger.debug(
             f"[ANALYZE_MATCH] Jugador {pid} - "
-            f"Tiempo total de posesión (ms): {total_possession_time_ms}"
+            f"Tiempo total de posesion (ms): {total_possession_time_ms}"
         )
         total_possession_time_s = total_possession_time_ms / 1000.0
 
-        # Calcular promedio de posesión por aparición
+        # Calcular promedio de posesion por aparicion
         appearances = sum(
             1 for s in states if s.ball_possession_time and s.ball_possession_time > 0
         )
@@ -86,11 +86,11 @@ def analyze_match(
             (total_possession_time_s / appearances) if appearances > 0 else 0.0
         )
 
-        # Validar valores máximos
+        # Validar valores maximos
         avg_possession_time_s = min(avg_possession_time_s, 1200.0)
         total_distance_km = min(total_distance_km, 5.0)
 
-        # Obtener datos del jugador con validación
+        # Obtener datos del jugador con validacion
         shirt_number = player_info[pid].get("shirt_number")
         team = player_info[pid].get("team")
         team_color = player_info[pid].get("color")

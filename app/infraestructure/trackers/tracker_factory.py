@@ -21,7 +21,7 @@ class TrackerFactory(metaclass=Singleton):
         
 
     def _create_default_trackers(self) -> None:
-        # Importar aquí para evitar circular imports al nivel module
+        # Importar aqui para evitar circular imports al nivel module
         from app.entities.trackers.player_tracker import PlayerTracker
         from app.entities.trackers.ball_tracker import BallTracker
 

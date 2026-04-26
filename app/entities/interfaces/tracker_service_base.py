@@ -21,13 +21,14 @@ from sqlalchemy.orm import Session
 from app.logger import get_logger
 
 import app.entities.utils.global_values_store as value_store
+import app.utils.routes as routes
 
 class TrackerServiceBase(metaclass=AbstractSingleton):
     """
-    Servicio base para detección + tracking.
+    Servicio base para deteccion + tracking.
     - Carga detector (YOLO)
     - Mantiene un ByteTrack interno (self.tracker) para continuidad entre frames
-    - Provee métodos streaming: process_frame (1 frame) y get_object_tracks
+    - Provee metodos streaming: process_frame (1 frame) y get_object_tracks
     """
 
     def __init__(self, ball_model_path: str, player_model_path: str):
@@ -107,9 +108,9 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
     min_samples: int = 1
 ) -> sv.Detections:
         """
-        Agrupa detecciones por cercanía espacial usando DBSCAN.
-        - eps: distancia máxima entre puntos para considerarse vecinos
-        - min_samples: mínimo para formar cluster
+        Agrupa detecciones por cercania espacial usando DBSCAN.
+        - eps: distancia maxima entre puntos para considerarse vecinos
+        - min_samples: minimo para formar cluster
         """
 
         if len(detections) == 0:
@@ -130,7 +131,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         for label in set(labels):
             cluster_indices = np.where(labels == label)[0]
 
-            # Estrategia: elegir bbox con mayor área o confianza
+            # Estrategia: elegir bbox con mayor area o confianza
             best_idx = cluster_indices[0]
             unique_indices.append(best_idx)
 
@@ -160,23 +161,23 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         return self.ball_model(
             frame,
             imgsz=640,
-            conf=0.35,
-            iou=0.4,
-            agnostic_nms=False,
+            conf=0.3,
+            iou=0.5,
+            agnostic_nms=True,
             device=self._device,
-            max_det=50,
-            nms=True,
+            max_det=20,
             verbose=False,
-        ), self.player_model(
+        ), self.player_model.track(
             frame,
             imgsz=640,
             conf=0.15,
-            iou=0.85,
+            iou=0.7,
             device=self._device,
             agnostic_nms=False,
-            max_det=100,
-            nms=True,
+            max_det=50,
             verbose=False,
+            tracker=routes.BYTETRACK_CONFIG_PATH.as_posix(),
+            persist=True
         )
 
     def get_object_tracks(
@@ -187,7 +188,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         conf: float = 0.1,
     ) -> None:
         """
-        Procesa un único frame en modo streaming:
+        Procesa un unico frame en modo streaming:
         1) detecta
         2) convierte a supervision
         3) actualiza ByteTrack
@@ -199,10 +200,10 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             ball_results, player_results = self.detect_frames(frame)
 
             if not ball_results and not player_results:
-                self.logger.info("No se obtuvieron resultados de detección.")
+                self.logger.info("No se obtuvieron resultados de deteccion.")
                 return
 
-            self.logger.info("Procesando resultados de detección...")
+            self.logger.info("Procesando resultados de deteccion...")
             player_result = player_results[0]
             ball_result = ball_results[0]
 

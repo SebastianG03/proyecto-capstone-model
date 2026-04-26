@@ -5,7 +5,7 @@ from app.infraestructure.database.connection_manager import Base
 
 class BallEventModel(Base):
     """
-    Eventos o detecciones del balón almacenadas (opcional).
+    Eventos o detecciones del balon almacenadas (opcional).
     """
 
     __tablename__ = "ball_event"

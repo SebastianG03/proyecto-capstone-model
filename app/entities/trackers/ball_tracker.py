@@ -35,9 +35,9 @@ class BallTracker(Tracker):
         kf = KalmanFilter(dim_x=4, dim_z=2)
         kf.F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]])
         kf.H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
-        kf.R *= 9  # observación
+        kf.R *= 9  # observacion
         kf.Q[2:, 2:] *= 0.1  # velocidad
-        kf.x = np.array([0.0, 0.0, 0.0, 0.0])  # se inicializa en primera detección
+        kf.x = np.array([0.0, 0.0, 0.0, 0.0])  # se inicializa en primera deteccion
         kf.P = np.eye(4) * 100.0
         kf.R = np.eye(2) * 9.0
         return kf
@@ -84,20 +84,20 @@ class BallTracker(Tracker):
             for det in detections:
                 if det.boxes is not None:
                     for box in det.boxes:
-                        info_logger.info(f"Detección: {box.xyxy}, clase: {box.cls}, conf: {box.conf}")
+                        info_logger.info(f"Deteccion: {box.xyxy}, clase: {box.cls}, conf: {box.conf}")
                         bbox = box.xyxy.cpu().numpy().squeeze(0)
                         conf = box.conf.cpu().numpy().squeeze(0)
                         
-                        if bbox is None or len(bbox) != 4:
-                            info_logger.info("[BallTracker] BBox inválida, omitiendo.")
-                            continue
-                        
                         bboxes.append(bbox)
                         confidences.append(conf)
+
+            if len(bboxes) == 0:
+                info_logger.info("[BallTracker] No hay bboxes")
+                return self._recover_ball_position()
             
-            xyxy = np.array(bboxes)
-            confs = np.array(confidences)
-            
+            xyxy = np.array(bboxes, dtype=np.float32).reshape(-1, 4)
+            confs = np.array(confidences, dtype=np.float32)
+
             sv_dets = sv.Detections(xyxy=xyxy, confidence=confs, class_id=np.zeros(len(bboxes)))
             tracked = self.tracker.update_with_detections(sv_dets)
 
@@ -147,7 +147,7 @@ class BallTracker(Tracker):
         det = np.linalg.det(S)
 
         if det < 1e-6:
-            logger.warning("Matriz S casi singular, saltando actualización")
+            logger.warning("Matriz S casi singular, saltando actualizacion")
             S_inv = np.linalg.pinv(S)
         else:
             S_inv = np.linalg.inv(S)
@@ -158,7 +158,7 @@ class BallTracker(Tracker):
             self.age = 0
             self.last_seen_frame = frame_number
         else:
-            logger.debug(f"Detección rechazada por gate (d2={d2:.2f})")
+            logger.debug(f"Deteccion rechazada por gate (d2={d2:.2f})")
             self.age += 1
         
 
@@ -180,7 +180,7 @@ class BallTracker(Tracker):
 
     def _recover_ball_position(self) -> tuple[Optional[tuple[float, float]], Optional[float]]:
         """
-        Recupera la posición del balón usando heurísticas cuando no es detectado.
+        Recupera la posicion del balon usando heuristicas cuando no es detectado.
         """
         info_logger.info("[BallTracker] Aplicando Kalman para recuperar el balon...")
 
@@ -192,7 +192,7 @@ class BallTracker(Tracker):
             
             return coords, conf
 
-        info_logger.info("[BallTracker] No se pudo recuperar la posición del balón")
+        info_logger.info("[BallTracker] No se pudo recuperar la posicion del balon")
         return None, None
 
     def _persist_state(self, frame_number: int, conf: float):

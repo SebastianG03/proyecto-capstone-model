@@ -20,12 +20,12 @@ _executor = ThreadPoolExecutor(max_workers=2)
 
 class TeamAssigner(metaclass=Singleton):
     """
-    Versión optimizada para uso frame-a-frame sin renombrar la clase.
+    Version optimizada para uso frame-a-frame sin renombrar la clase.
     - Bootstrap (one-shot) de colores de equipo.
-    - Clasificación O(1) por jugador por frame.
+    - Clasificacion O(1) por jugador por frame.
     - Smoothing temporal por jugador (ventana configurable).
     - Toma torso central + K-means RGB simple (3 clusters).
-    - Fallbacks robustos si bbox está recortado o inválido.
+    - Fallbacks robustos si bbox esta recortado o invalido.
     """
 
     def __init__(
@@ -43,10 +43,10 @@ class TeamAssigner(metaclass=Singleton):
         self.player_team_history: Dict[int, deque] = defaultdict(
             lambda: deque(maxlen=smoothing_window)
         )
-        self.player_team_cache: Dict[int, int] = {}  # última decisión estable
+        self.player_team_cache: Dict[int, int] = {}  # ultima decision estable
         self._last_seen: Dict[int, int] = {}
 
-        # parámetros
+        # parametros
         self.smoothing_window = smoothing_window
         self.min_bootstrap_players = min_bootstrap_players
         self.torso_fraction = float(np.clip(torso_fraction, 0.2, 0.6))
@@ -85,7 +85,7 @@ class TeamAssigner(metaclass=Singleton):
         return crop[start:end, :]
 
     # ---------------------------
-    # Normaliza iluminación
+    # Normaliza iluminacion
     # ---------------------------
     def _illuminant_normalize(self, bgr: np.ndarray) -> np.ndarray:
         """Gray-world simple: divide por la media de cada canal."""
@@ -128,7 +128,7 @@ class TeamAssigner(metaclass=Singleton):
         labels = km.fit_predict(pixels)
         centers = km.cluster_centers_
 
-        # 4. ¿cuál es el más poblado?
+        # 4. ¿cual es el mas poblado?
         uniq, counts = np.unique(labels, return_counts=True)
         best = uniq[np.argmax(counts)]
         dominant_rgb = centers[best]
@@ -145,7 +145,7 @@ class TeamAssigner(metaclass=Singleton):
     # ---------------------------
     def bootstrap_colors(self, frame: MatLike, players: List[PlayerState]) -> bool:
         """
-        Entrena MiniBatchKMeans una sola vez cuando haya suficientes colores válidos.
+        Entrena MiniBatchKMeans una sola vez cuando haya suficientes colores validos.
         """
         if self.kmeans is not None:
             return True
@@ -181,7 +181,7 @@ class TeamAssigner(metaclass=Singleton):
             return False
 
     # ---------------------------
-    # Predicción rápida por color
+    # Prediccion rapida por color
     # ---------------------------
     def _to_lab(self, bgr: np.ndarray) -> np.ndarray:
         arr = np.asarray(bgr, dtype=np.uint8).reshape(1, 1, 3)

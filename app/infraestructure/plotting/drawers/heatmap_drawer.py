@@ -12,13 +12,13 @@ import app.entities.utils.tools_context as context
 from app.utils.routes import OUTPUT_VIDEOS_DIR
 from app.logger import debug_logger
 
-RAW_W, RAW_H = 1280, 720  # píxeles de la fuente
+RAW_W, RAW_H = 1280, 720  # pixeles de la fuente
 PITCH_X, PITCH_Y = [0, 120], [0, 80]  # unidades StatsBomb
 
 
 def _normalize_coords(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normaliza x e y de píxeles a 0-120 y 0-80 respectivamente.
+    Normaliza x e y de pixeles a 0-120 y 0-80 respectivamente.
     Se hace una copia para no modificar el original.
     """
     df = df.copy()
@@ -29,7 +29,7 @@ def _normalize_coords(df: pd.DataFrame) -> pd.DataFrame:
 
 class HeatmapDrawer(Diagram):
     """
-    Genera heatmaps por jugador/equipo **únicamente** con datos de BD
+    Genera heatmaps por jugador/equipo **unicamente** con datos de BD
     (PlayerState + Player).  Rellena saltos extremos para evitar
     discontinuidades en el KDE.
     """
@@ -42,7 +42,7 @@ class HeatmapDrawer(Diagram):
         for p in [base, self.players_path]:
             p.mkdir(parents=True, exist_ok=True)
 
-    # --- resto de métodos auxiliares sin cambios ---
+    # --- resto de metodos auxiliares sin cambios ---
     def _safe_concat(self, dfs: List[pd.DataFrame]) -> pd.DataFrame:
         if not dfs:
             return pd.DataFrame(columns=["x", "y"])
@@ -70,7 +70,7 @@ class HeatmapDrawer(Diagram):
     def _build_player_df(self, player_id: int) -> pd.DataFrame:
         """
         Construye DataFrame con coordenadas NORMALIZADAS usando timestamp_ms
-        como orden cronológico (no frame_index).
+        como orden cronologico (no frame_index).
         """
         # 1. leemos por timestamp_ms  ‹‹‹ CAMBIO
         states: List[PlayerState] = (
@@ -128,7 +128,7 @@ class HeatmapDrawer(Diagram):
         return pd.concat(fill_dfs, ignore_index=True)
 
     def _is_valid_for_kde(self, df: pd.DataFrame) -> bool:
-        # Permite dibujar un punto único o kde con 3+
+        # Permite dibujar un punto unico o kde con 3+
         return not df.empty and len(df) >= 1
 
     @override
@@ -161,16 +161,16 @@ class HeatmapDrawer(Diagram):
             f"x∈[{df.x.min():.1f}, {df.x.max():.1f}]  "
             f"y∈[{df.y.min():.1f}, {df.y.max():.1f}]"
             if not df.empty
-            else f"  jugador {pid}  SIN DATOS – heatmap vacío"
+            else f"  jugador {pid}  SIN DATOS – heatmap vacio"
         )
 
         fig, ax, pitch = self._draw_pitch()
 
         if df.empty:
-            # Nada más que el campo limpio
-            print("  ↳ DataFrame vacío – campo limpio")
+            # Nada mas que el campo limpio
+            print("  ↳ DataFrame vacio – campo limpio")
         elif df.x.nunique() == 1 and df.y.nunique() == 1:
-            # Punto único
+            # Punto unico
             ax.scatter(
                 df.x.iloc[0],
                 df.y.iloc[0],
@@ -180,7 +180,7 @@ class HeatmapDrawer(Diagram):
                 linewidths=2,
                 zorder=5,
             )
-            print("  ↳ punto único dibujado")
+            print("  ↳ punto unico dibujado")
         else:
             # KDE normal
             bw = max(0.5, 4 / np.sqrt(len(df)))

@@ -1,4 +1,7 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
+from numpy.typing import NDArray
 from sqlalchemy import Boolean, Column, Integer, Float, String, ForeignKey
 from sqlalchemy.dialects.sqlite import DATETIME
 from sqlalchemy.orm import relationship
@@ -9,7 +12,7 @@ import json
 
 class Player(Base):
     """
-    Información INMUTABLE (o que cambia muy poco) del jugador.
+    Informacion INMUTABLE (o que cambia muy poco) del jugador.
     """
 
     __tablename__ = "players"
@@ -23,7 +26,7 @@ class Player(Base):
     shirt_number = Column(Integer, nullable=True, default=None)
     goals = Column(Integer, default=0)
 
-    # --- timestamps de auditoría --------------------------------------------
+    # --- timestamps de auditoria --------------------------------------------
     created_at = Column(DATETIME(timezone=True), server_default=func.now())
     updated_at = Column(
         DATETIME(timezone=True),
@@ -32,7 +35,7 @@ class Player(Base):
         onupdate=datetime.now(timezone.utc),
     )
 
-    # relación 1-N con sus estados
+    # relacion 1-N con sus estados
     states = relationship("PlayerState", back_populates="player")
 
     def to_dict(self):
@@ -68,7 +71,7 @@ class PlayerState(Base):
     bbox = Column(String, nullable=True)  # JSON list
     conf = Column(Float)
 
-    # posición
+    # posicion
     x = Column(Float)
     y = Column(Float)
     z = Column(Float)
@@ -79,7 +82,7 @@ class PlayerState(Base):
     x_smoothed = Column(Float, nullable=True)
     y_smoothed = Column(Float, nullable=True)
 
-    # balón
+    # balon
     ball_x = Column(Float, nullable=True)
     ball_y = Column(Float, nullable=True)
     ball_z = Column(Float, nullable=True)
@@ -88,7 +91,7 @@ class PlayerState(Base):
     ball_possession_time = Column(Float, default=0.0)
     ball_owner_id = Column(Integer, index=True, nullable=True)
 
-    # dinámica
+    # dinamica
     distance = Column(Float, default=0.0)  # on meters
     incremental_distance = Column(Float, default=0.0)
     speed = Column(Float, default=0.0)  # on km per hour
@@ -100,10 +103,10 @@ class PlayerState(Base):
     # timestamp absoluto guardado en milisegundos
     timestamp_ms = Column(Float, index=True, nullable=True)
 
-    # timestamp de inserción
+    # timestamp de insercion
     created_at = Column(DATETIME(timezone=True), default=datetime.now(timezone.utc))
 
-    # relación inversa
+    # relacion inversa
     player = relationship("Player", back_populates="states")
 
     def set_bbox(self, bbox_list: list[int]):
@@ -145,3 +148,49 @@ class PlayerState(Base):
             "timestamp_ms": self.timestamp_ms,
             "created_at": self.created_at.isoformat(),
         }
+
+
+
+@dataclass
+class State:
+    def __init__(
+        self,
+        bbox: list[float],
+        x: float,
+        y: float,
+        conf: float,
+        timestamp: float,
+        player_id: int,
+        frame_num: int):
+        self.bbox = bbox
+        self.x = x
+        self.y = y
+        self.conf = conf
+        self.timestamp = timestamp
+        self.player_id = player_id
+        self.frame_num = frame_num
+    
+    @staticmethod
+    def to_instance(payload: dict[str, Any]):
+        return State(
+            bbox=payload["bbox"],
+            x=payload["x"],
+            y=payload["y"],
+            conf=payload["conf"],
+            timestamp=payload["timestamp_ms"],
+            player_id=payload["player_id"],
+            frame_num=payload["frame_index"],
+        )
+
+@dataclass
+class PlayerStatus:
+    player_id: int
+    frame_index: int
+    vx: float
+    vy: float
+    speed: float
+    direction: float
+    time: float
+    delta_x: NDArray
+    xo: NDArray
+    xf: NDArray

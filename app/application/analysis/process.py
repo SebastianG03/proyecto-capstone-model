@@ -37,8 +37,8 @@ def process_frame(
     time_reporter: ProcessTimeReporter,
 ) -> int:
     """
-    Procesa un lote de frames de video aislándolos entre sí:
-    si un frame falla se ignora y se continúa con el siguiente.
+    Procesa un lote de frames de video aislandolos entre si:
+    si un frame falla se ignora y se continua con el siguiente.
     """
     start_time = time.time()
     tools = analysis_context.tools
@@ -65,26 +65,26 @@ def process_frame(
             )
 
             info_logger.info(f"\n{'=' * 20} Procesando frame {frame_num} {'=' * 20}\n")
-            info_logger.info(f"Tiempo desde último frame: {dt:.4f} segundos")
+            info_logger.info(f"Tiempo desde ultimo frame: {dt:.4f} segundos")
 
             # -------------------------------------------------------
-            # 1. Estimar movimiento de cámara
+            # 1. Estimar movimiento de camara
             # -------------------------------------------------------
             try:
                 info_logger.info(
-                    "[ProcessRun] Paso 1: Estimando movimiento de cámara..."
+                    "[ProcessRun] Paso 1: Estimando movimiento de camara..."
                 )
                 time_reporter.start("camera_movement_estimator")
                 camera_movement = tools.camera_movement_estimator.update(frame)
                 time_reporter.stop("camera_movement_estimator")
             except Exception as e:
                 error_logger.error(
-                    f"[Frame {frame_num}] Error estimando movimiento de cámara: {e}"
+                    f"[Frame {frame_num}] Error estimando movimiento de camara: {e}"
                 )
                 raise e
 
             # -------------------------------------------------------
-            # 2. TRACKING DE OBJETOS (jugadores + balón)
+            # 2. TRACKING DE OBJETOS (jugadores + balon)
             # -------------------------------------------------------
 
             tracker.get_object_tracks(frame, frame_num, db)
@@ -142,7 +142,7 @@ def process_frame(
             # 4. ESTIMAR VELOCIDAD / DISTANCIA
             # -------------------------------------------------------
             info_logger.info(
-                "[ProcessRun] Paso 4: Estimando velocidad y distancia del último jugador..."
+                "[ProcessRun] Paso 4: Estimando velocidad y distancia del ultimo jugador..."
             )
             constant = tools.camera_movement_estimator.get_current_scale() * value_store.globals.depth * pixels_to_meters
             time_reporter.start("speed_and_distance")
@@ -155,10 +155,10 @@ def process_frame(
             time_reporter.stop("speed_and_distance")
 
             # -------------------------------------------------------
-            # 5. ASIGNACIÓN DEL BALÓN A JUGADOR, DEPENDE DE LA EJECUCION DEL PUNTO 4
+            # 5. ASIGNACIoN DEL BALoN A JUGADOR, DEPENDE DE LA EJECUCION DEL PUNTO 4
             # -------------------------------------------------------
             try:
-                info_logger.info("[ProcessRun] Paso 5: Asignando balón a jugador...")
+                info_logger.info("[ProcessRun] Paso 5: Asignando balon a jugador...")
                 players = tools.player_records.get_all_states()[:50]
                 ball_frames = tools.ball_records.get_all()[:15]
                 if ball_frames:
@@ -177,10 +177,10 @@ def process_frame(
                     time_reporter.stop("assign_ball_to_player")
                 else:
                     info_logger.info(
-                        "[ProcessRun] No hay frames de balón para asignar."
+                        "[ProcessRun] No hay frames de balon para asignar."
                     )
             except Exception as e:
-                error_logger.error(f"[Frame {frame_num}] Error asignando balón: {e}")
+                error_logger.error(f"[Frame {frame_num}] Error asignando balon: {e}")
                 raise e
 
             # -------------------------------------------------------
@@ -203,7 +203,7 @@ def process_frame(
                         time_reporter.stop("team assigner")
                     else:
                         info_logger.info(
-                            "[ProcessRun] No hay último jugador para asignar equipo."
+                            "[ProcessRun] No hay ultimo jugador para asignar equipo."
                         )
             except Exception as e:
                 error_logger.error(f"[Frame {frame_num}] Error asignando equipo: {e}")
@@ -219,23 +219,30 @@ def process_frame(
                     players = [player.to_dict() for player in players]
                     for player in players:
                         player_id = int(player["player_id"])
+                        
+                        if player["bbox"] is None:
+                            info_logger.info(
+                                "[ProcessRun] BBox del jugador vacio, omitiendo reconocimiento."
+                            )
+                            continue
+                        
                         crop = tools.number_recognizer._crop_dorsal_region(
                             frame, player["bbox"]
                         )
                         if crop.size == 0:
                             info_logger.info(
-                                "[ProcessRun] Crop del dorsal vacío, omitiendo reconocimiento."
+                                "[ProcessRun] Crop del dorsal vacio, omitiendo reconocimiento."
                             )
                         else:
                             proc = tools.number_recognizer._preprocess(crop)
                             info_logger.info(
-                                "[ProcessRun] Reconociendo número de jugador..."
+                                "[ProcessRun] Reconociendo numero de jugador..."
                             )
 
                             def update_best_num(num: Optional[int], conf: float):
                                 if num is not None and conf > 0.35:
                                     debug_logger.debug(
-                                        f"[ProcessRun] Número {num} con confianza "
+                                        f"[ProcessRun] Numero {num} con confianza "
                                         f"{conf:.4f} añadido al jugador {player_id}."
                                     )
                                     numbers_data[player_id][num] += conf
@@ -251,9 +258,9 @@ def process_frame(
                             player_number = max(player_numbers, key=player_numbers.get) # type: ignore
                             if player_number is not None:
                                 info_logger.info(
-                                    f"[ProcessRun] Número de jugador reconocido: {player_number}"
+                                    f"[ProcessRun] Numero de jugador reconocido: {player_number}"
                                 )
-                                info_logger.info(f"[ProcessRun] Paso 7: Reconociendo número de jugador: {player_number}")
+                                info_logger.info(f"[ProcessRun] Paso 7: Reconociendo numero de jugador: {player_number}")
                                 player_db_id = tools.player_records.get_player_id(player_id)
                                 if player_db_id and player_db_id != -1:
                                     tools.player_records.patch(
@@ -266,14 +273,14 @@ def process_frame(
                                         frame=frame_num,
                                         track_id=player_id,
                                         shirt_number=player_number)
-                                    info_logger.info(f"[ProcessRun] Número de jugador actualizado exitosamente: {player_number}")
+                                    info_logger.info(f"[ProcessRun] Numero de jugador actualizado exitosamente: {player_number}")
                                 else:
-                                    error_logger.error(f"[Frame {frame_num}] No se encontró Player con player_id {player_id}")
+                                    error_logger.error(f"[Frame {frame_num}] No se encontro Player con player_id {player_id}")
                     time_reporter.stop("number recognizer")
                 else:
-                    info_logger.info("[ProcessRun] No hay último jugador para reconocer número.")
+                    info_logger.info("[ProcessRun] No hay ultimo jugador para reconocer numero.")
             except Exception as e:
-                error_logger.error(f"[Frame {frame_num}] Error reconociendo número de jugador: {e}")
+                error_logger.error(f"[Frame {frame_num}] Error reconociendo numero de jugador: {e}")
                 raise e
 
 
@@ -347,7 +354,7 @@ def process_frame(
                 )
             except Exception as e:
                 error_logger.error(
-                    f"[Frame {frame_num}] Error escribiendo exportación: {e}"
+                    f"[Frame {frame_num}] Error escribiendo exportacion: {e}"
                 )
                 raise e
 

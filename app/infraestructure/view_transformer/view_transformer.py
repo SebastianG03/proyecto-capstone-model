@@ -16,11 +16,11 @@ class ViewTransformer:
     """
 
     def __init__(self, field_length_m: float = 105.0, field_width_m: float = 68.0):
-        # Medidas reales del campo de fútbol (en metros)
+        # Medidas reales del campo de futbol (en metros)
         FIELD_LENGTH = field_length_m
         FIELD_WIDTH = field_width_m
 
-        # Coordenadas del polígono detectado en la imagen (4 puntos en píxeles)
+        # Coordenadas del poligono detectado en la imagen (4 puntos en pixeles)
         self.pixel_vertices = np.array(
             [
                 [110, 1035],  # Bottom-left
@@ -33,7 +33,7 @@ class ViewTransformer:
 
         self.pixel_vertices_contour = self.pixel_vertices.reshape((-1, 1, 2))
 
-        # Mapa de proyección destino en metros
+        # Mapa de proyeccion destino en metros
         self.target_vertices = np.array(
             [
                 [0, FIELD_WIDTH],  # Bottom-left
@@ -44,19 +44,19 @@ class ViewTransformer:
             dtype=np.float32,
         )
 
-        # Matriz de transformación perspectiva
+        # Matriz de transformacion perspectiva
         self.perspective_transform = cv2.getPerspectiveTransform(
             self.pixel_vertices, self.target_vertices
         )
 
     # ---------------------------------------------------------
-    # TRANSFORMACIÓN DE UN PUNTO INDIVIDUAL
+    # TRANSFORMACIoN DE UN PUNTO INDIVIDUAL
     # ---------------------------------------------------------
 
     def transform_point(self, point_xy: np.ndarray):
         """
         Transforma un punto x,y a coordenadas reales del campo.
-        Retorna None si el punto está fuera del polígono del campo.
+        Retorna None si el punto esta fuera del poligono del campo.
         """
         x, y = float(point_xy[0]), float(point_xy[1])
         point_int = (int(x), int(y))
@@ -74,11 +74,11 @@ class ViewTransformer:
 
     def add_transformed_positions(self, db: Session):
         """
-            Ajusta la posición del balón y los jugadores en cada frame.
-            Luego de una base de datos, transforma los registros de balón y jugadores.
-            Si hay registros de balón pero no de jugadores, solo transforma los registros de balón.
-            Si hay registros de jugadores pero no de balón, solo transforma los registros de jugadores.
-            Si no hay registros de balón ni de jugadores, no hace nada.
+            Ajusta la posicion del balon y los jugadores en cada frame.
+            Luego de una base de datos, transforma los registros de balon y jugadores.
+            Si hay registros de balon pero no de jugadores, solo transforma los registros de balon.
+            Si hay registros de jugadores pero no de balon, solo transforma los registros de jugadores.
+            Si no hay registros de balon ni de jugadores, no hace nada.
         """
         ball_collection = TrackCollectionBall()
         player_collection = TrackCollectionPlayer()
@@ -90,7 +90,7 @@ class ViewTransformer:
         try:
             if ball_register is not None:
                 debug_logger.debug(
-                    "[ViewTransformer] Calculando posición transformada del balon, datos del balon "
+                    "[ViewTransformer] Calculando posicion transformada del balon, datos del balon "
                     f"{ball_register.to_dict()}"
                 )
                 self.calculate_ball_transformed_position(
@@ -98,7 +98,7 @@ class ViewTransformer:
                 )
             if player_register is not None:
                 debug_logger.debug(
-                    "[ViewTransformer] Calculando posición transformada del jugador, "
+                    "[ViewTransformer] Calculando posicion transformada del jugador, "
                     f"datos del jugador {player_register.to_dict()}"
                 )
                 self.calculate_player_transformed_position(
@@ -114,21 +114,21 @@ class ViewTransformer:
         self, ball_record: BallEventModel, db: Session
     ):
         """
-        Calcula la posición transformada del balón en un registro.
+        Calcula la posicion transformada del balon en un registro.
 
-        Recibe un registro BallEventModel y una sesión de base de datos.
-        Transforma la posición del balón en el registro y la guarda en la base
+        Recibe un registro BallEventModel y una sesion de base de datos.
+        Transforma la posicion del balon en el registro y la guarda en la base
         de datos.
 
         Si hay un error al momento de transformar, se imprime el error y se
-        lanza una excepción.
+        lanza una excepcion.
         """
         try:
             bx, by = self._validate_player_coordinates(
                 f"{ball_record.x}", f"{ball_record.y}"
             )
             debug_logger.debug(
-                f"[ViewTransformer] Posición del balón para transformación: x={bx}, y={by}"
+                f"[ViewTransformer] Posicion del balon para transformacion: x={bx}, y={by}"
             )
             if bx is None and by is None:
                 debug_logger.debug(
@@ -139,11 +139,11 @@ class ViewTransformer:
                 np.array([bx, by], dtype=np.float32)
             )
             debug_logger.debug(
-                f"[ViewTransformer] Posición transformada del balón: {ball_transformed}"
+                f"[ViewTransformer] Posicion transformada del balon: {ball_transformed}"
             )
             if ball_transformed is None:
                 debug_logger.debug(
-                    "[ViewTransformer] Posición transformada es None, fuera del campo."
+                    "[ViewTransformer] Posicion transformada es None, fuera del campo."
                 )
                 return
             ball_collection = TrackCollectionBall()
@@ -157,12 +157,12 @@ class ViewTransformer:
             return
         except Exception as e:
             error_logger.error(
-                f"[ViewTransformer] Error calculando posición transformada del balón: {e}"
+                f"[ViewTransformer] Error calculando posicion transformada del balon: {e}"
             )
             raise e
 
     def _validate_player_coordinates(self, x, y):
-        """Valida coordenadas de jugadores con protección extra contra valores corruptos"""
+        """Valida coordenadas de jugadores con proteccion extra contra valores corruptos"""
         try:
             # Convertir a float con manejo de valores extremos
             px = float(x) if x is not None else None
@@ -174,7 +174,7 @@ class ViewTransformer:
             # Verificar si son infinitos o NaN
             if math.isinf(px) or math.isnan(px) or math.isinf(py) or math.isnan(py):
                 error_logger.error(
-                    f"[ViewTransformer] Coordenadas inválidas detectadas: x={px}, y={py}"
+                    f"[ViewTransformer] Coordenadas invalidas detectadas: x={px}, y={py}"
                 )
                 return None, None
 
@@ -193,19 +193,19 @@ class ViewTransformer:
         self, player_record: PlayerState, db: Session
     ):
         """
-        Calcula la posición transformada del jugador en un registro.
+        Calcula la posicion transformada del jugador en un registro.
 
-        Recibe un registro PlayerStateModel y una sesión de base de datos.
-        Transforma la posición del usuario en el registro y la guarda en la base
+        Recibe un registro PlayerStateModel y una sesion de base de datos.
+        Transforma la posicion del usuario en el registro y la guarda en la base
         de datos.
 
         Si hay un error al momento de transformar, se imprime el error y se
-        lanza una excepción.
+        lanza una excepcion.
         """
         try:
             px, py = float(f"{player_record.x}"), float(f"{player_record.y}")
             debug_logger.debug(
-                f"[ViewTransformer] Posición del jugador para transformación: x={px}, y={py}"
+                f"[ViewTransformer] Posicion del jugador para transformacion: x={px}, y={py}"
             )
             if px is None and py is None:
                 debug_logger.debug(
@@ -216,11 +216,11 @@ class ViewTransformer:
                 np.array([px, py], dtype=np.float32)
             )
             debug_logger.debug(
-                f"[ViewTransformer] Posición transformada del jugador: {player_transformed}"
+                f"[ViewTransformer] Posicion transformada del jugador: {player_transformed}"
             )
             if player_transformed is None:
                 debug_logger.debug(
-                    "[ViewTransformer] Posición transformada es None, fuera del campo."
+                    "[ViewTransformer] Posicion transformada es None, fuera del campo."
                 )
                 return
             player_collection = TrackCollectionPlayer()
@@ -235,6 +235,6 @@ class ViewTransformer:
             return
         except Exception as e:
             error_logger.error(
-                f"[ViewTransformer] Error calculando posición transformada del jugador: {e}"
+                f"[ViewTransformer] Error calculando posicion transformada del jugador: {e}"
             )
             raise e

@@ -14,7 +14,7 @@ import app.entities.utils.tools_context as context
 
 class CameraMovementEstimator(metaclass=Singleton):
     """
-    Versión STREAMING del estimador de movimiento de cámara.
+    Version STREAMING del estimador de movimiento de camara.
     Mantiene el nombre de la clase original.
 
     USO:
@@ -69,8 +69,8 @@ class CameraMovementEstimator(metaclass=Singleton):
         Procesa UN SOLO FRAME y retorna el movimiento:
         (dx, dy)
 
-        dx > 0 → cámara se mueve hacia la derecha
-        dy > 0 → cámara se mueve hacia abajo
+        dx > 0 → camara se mueve hacia la derecha
+        dy > 0 → camara se mueve hacia abajo
         """
 
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -168,7 +168,7 @@ class CameraMovementEstimator(metaclass=Singleton):
         db: Session,
     ):
         """
-        Ajusta la posición del jugador/ balón compensando movimiento de cámara.
+        Ajusta la posicion del jugador/ balon compensando movimiento de camara.
         """
         from app.entities.models.BallState import BallEventModel
         
@@ -176,33 +176,33 @@ class CameraMovementEstimator(metaclass=Singleton):
         try:
             tracks_collection = None
             print(
-                f"Ajustando posición del track {track.id} "
-                f"con movimiento de cámara {camera_movement_per_frame}."
+                f"Ajustando posicion del track {track.id} "
+                f"con movimiento de camara {camera_movement_per_frame}."
             )
             dx, dy = camera_movement_per_frame
             debug_logger.debug(
-                f"[CameraMovementEstimator] Movimiento de cámara por frame: dx={dx}, dy={dy}"
+                f"[CameraMovementEstimator] Movimiento de camara por frame: dx={dx}, dy={dy}"
             )
 
             if dx is None or dy is None:
-                print("Movimiento de cámara no definido, no se aplica ajuste.")
+                print("Movimiento de camara no definido, no se aplica ajuste.")
                 return
 
             # Conversion
             # dx *= pixels_to_meters
             # dy *= pixels_to_meters
             debug_logger.debug(
-                f"[CameraMovementEstimator] Movimiento de cámara: dx={dx}, dy={dy}"
+                f"[CameraMovementEstimator] Movimiento de camara: dx={dx}, dy={dy}"
             )
             x, y = track.x, track.y
 
             if x is None or y is None:
-                print("Posición del track no definida, no se aplica ajuste.")
+                print("Posicion del track no definida, no se aplica ajuste.")
                 return
 
             # Conversion
             debug_logger.debug(
-                f"[CameraMovementEstimator] Posición actual: x={x}, y={y}"
+                f"[CameraMovementEstimator] Posicion actual: x={x}, y={y}"
             )
             # x *= pixels_to_meters
             # y *= pixels_to_meters
@@ -212,10 +212,10 @@ class CameraMovementEstimator(metaclass=Singleton):
             position_adjusted = (adjusted_x, adjusted_y)
 
             if position_adjusted[0] is None or position_adjusted[1] is None:
-                debug_logger.debug("Posición ajustada inválida, no se aplica ajuste.")
+                debug_logger.debug("Posicion ajustada invalida, no se aplica ajuste.")
                 return
             debug_logger.debug(
-                f"Posición ajustada: x={position_adjusted[0]}, y={position_adjusted[1]}"
+                f"Posicion ajustada: x={position_adjusted[0]}, y={position_adjusted[1]}"
             )
 
             updates = {"x": position_adjusted[0], "y": position_adjusted[1]}
@@ -244,10 +244,10 @@ class CameraMovementEstimator(metaclass=Singleton):
                 error_logger.error("tracks_collection no pudo ser determinado.")
                 raise ValueError("tracks_collection no pudo ser determinado.")
 
-            debug_logger.debug(f"Posición del track {track.id} ajustada correctamente.")
+            debug_logger.debug(f"Posicion del track {track.id} ajustada correctamente.")
 
         except Exception as e:
-            debug_logger.debug(f"Error ajustando posición del track {track}: {e}")
+            debug_logger.debug(f"Error ajustando posicion del track {track}: {e}")
             raise e
 
     # -------------------------------------------------------------

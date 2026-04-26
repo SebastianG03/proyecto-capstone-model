@@ -34,8 +34,8 @@ class R2Downloader(metaclass=Singleton):
 
     def build_destination_path(self, key: str, base_dir: str = "./tmp") -> Path:
         """
-        Construye un Path válido para guardar el archivo usando pathlib.
-        Extrae automáticamente el nombre del archivo desde el key.
+        Construye un Path valido para guardar el archivo usando pathlib.
+        Extrae automaticamente el nombre del archivo desde el key.
         """
         base = Path(base_dir)
         base.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ class R2Downloader(metaclass=Singleton):
         try:
             info_logger.info(f"Descargando {key} a {destination_path}...")
             with open(destination_path, "wb") as f:
-                info_logger.info(f"Abriendo conexión a R2 para el objeto {key}...")
+                info_logger.info(f"Abriendo conexion a R2 para el objeto {key}...")
                 obj = self.s3.get_object(Bucket=self.bucket, Key=key)
                 info_logger.info(f"Iniciando descarga en chunks de {chunk_size} bytes...")
                 body = obj["Body"]

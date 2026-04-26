@@ -58,7 +58,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
     downloader = R2Downloader()
 
     # download_path = Path(INPUT_VIDEOS_DIR, video_name)
-    download_path = Path(r"C:\Users\Usuario\Desktop\temp\res\2_720p.mkv")
+    download_path = Path(r"C:\Users\Usuario\Desktop\temp\res\Partido corto 2.mp4")
     # downloader.build_destination_path(
     #     key=video_name, base_dir=INPUT_VIDEOS_DIR.as_posix()
     # )
@@ -94,7 +94,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
 
     if not video_stream: 
         error_logger.error("Error: No frames read from video")
-        raise Exception("El video no es válido, está vacío o no se encuentra disponible en la nube.")
+        raise Exception("El video no es valido, esta vacio o no se encuentra disponible en la nube.")
 
     try:
         tracker = TrackerService(
@@ -109,7 +109,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
         if not first_frame.any():
             error_logger.error("Error: First frame is empty")
             return
-        info_logger.info("Inicializando servicios de análisis...")
+        info_logger.info("Inicializando servicios de analisis...")
         tools = AnalysisTools()
         tools.start(first_frame=first_frame, match_id=match_id)
         first_frame = None
@@ -127,7 +127,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
                 empty_batches += 1
                 if empty_batches >= MAX_EMPTY_BATCHES:
                     debug_logger.debug(
-                        "Múltiples batches vacíos consecutivos, finalizando procesamiento."
+                        "Multiples batches vacios consecutivos, finalizando procesamiento."
                     )
                     break
                 continue
@@ -181,7 +181,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
         info_logger.info("Heatmaps subidos.")
         
         tools.analysis_data_collector.export_to_csv()
-        info_logger.info("Datos de análisis exportados a CSV.")
+        info_logger.info("Datos de analisis exportados a CSV.")
 
         total_time = time.time() - start_time
         metrics.update({
@@ -194,14 +194,14 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
         info_logger.info("        RESUMEN FINAL DEL PROCESAMIENTO")
         info_logger.info("=" * 50)
         info_logger.info(f"Tiempo total: {total_time / 60:.2f} min")
-        # print(f"Memoria máxima usada: {max(metrics['memory_usage']):.2f} MB")
+        # print(f"Memoria maxima usada: {max(metrics['memory_usage']):.2f} MB")
         info_logger.info(
-            f"Frames balón detectado: {metrics['ball_detection']['detected']}"
+            f"Frames balon detectado: {metrics['ball_detection']['detected']}"
         )
         info_logger.info(
-            f"Frames balón interpolado: {metrics['ball_detection']['interpolated']}"
+            f"Frames balon interpolado: {metrics['ball_detection']['interpolated']}"
         )
-        info_logger.info(f"Escribiendo métricas a {metrics_file.as_posix()}...")
+        info_logger.info(f"Escribiendo metricas a {metrics_file.as_posix()}...")
         metrics_file.parent.mkdir(parents=True, exist_ok=True)
         metrics_file.write_text(
             json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -211,7 +211,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
             file_bytes=metrics_file.read_bytes(),
             file_type="application/json",
         )
-        info_logger.info("Métricas escritas.")
+        info_logger.info("Metricas escritas.")
         return heatmap_files
     except Exception as e:
         error_logger.error(f"Error processing video: {e}")

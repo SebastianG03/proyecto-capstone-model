@@ -17,7 +17,7 @@ class RecordCollectionBase(metaclass=Singleton):
 
     def generate_id(self, obj) -> int:
         """
-        Genera el ID único usado en la base (depende del tipo de entidad).
+        Genera el ID unico usado en la base (depende del tipo de entidad).
         Se puede sobrescribir en la clase hija.
         """
         return obj.track_id
@@ -29,7 +29,7 @@ class RecordCollectionBase(metaclass=Singleton):
     def get_record_for_frame(self, track_id: int, frame_index: int):
         """
         Busca un registro por track_id y frame_index.
-        Puede ser sobrescrito si la colección usa otros campos.
+        Puede ser sobrescrito si la coleccion usa otros campos.
         """
         try:
             with value_store.globals.session as db:
@@ -64,7 +64,7 @@ class RecordCollectionBase(metaclass=Singleton):
             obj = self.orm_model(**obj_data)
             with value_store.globals.session as db:
                 db.add(obj)
-                print(f"[RecordCollectionBase] Objeto añadido a la sesión de la DB: {obj}")
+                print(f"[RecordCollectionBase] Objeto añadido a la sesion de la DB: {obj}")
                 db.commit()
                 db.refresh(obj)
             print(f"[RecordCollectionBase] Objeto refrescado: {obj}")

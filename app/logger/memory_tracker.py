@@ -124,11 +124,11 @@ class MemoryReporter:
     
     def get_large_variables(self, local_scope: Optional[dict] = None) -> List[Dict[str, Any]]:
         """
-        Devuelve una lista de los N variables más grandes en memoria, 
+        Devuelve una lista de los N variables mas grandes en memoria, 
         incluyendo su nombre, tipo, tamaño en bytes y megabytes.
         
-        Puede especificar un ámbito de variables locales (local_scope) 
-        para buscar variables en ese ámbito en lugar del actual.
+        Puede especificar un ambito de variables locales (local_scope) 
+        para buscar variables en ese ambito en lugar del actual.
         
         Ignora variables que comienzan con '_' y variables internas como 
         gc, sys, psutil, json, inspect, etc.
@@ -136,11 +136,11 @@ class MemoryReporter:
         Para contenedores como listas, tuplas, conjuntos y diccionarios, 
         estima el tamaño total incluyendo sus elementos.
         
-        Solo incluye variables que ocupen más de 1KB de memoria.
+        Solo incluye variables que ocupen mas de 1KB de memoria.
         
         :param local_scope: Diccionario con variables locales para buscar.
         :type local_scope: Optional[dict]
-        :return: Lista de variables más grandes en memoria.
+        :return: Lista de variables mas grandes en memoria.
         :rtype: List[Dict[str, Any]]
         """
         gc.collect()
@@ -319,8 +319,8 @@ class MemoryReporter:
     
     def after_loop(self, label: str = "post_loop", local_vars: Optional[dict] = None):
         """
-        Llama esto después de cada bucle importante.
-        Opcionalmente pasa locals() para análisis más preciso.
+        Llama esto despues de cada bucle importante.
+        Opcionalmente pasa locals() para analisis mas preciso.
         """
         return self.take_snapshot(trigger=f"loop_{label}", local_scope=local_vars)
     

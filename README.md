@@ -7,7 +7,7 @@ Este proyecto es un backend desarrollado en Python. Utiliza un entorno virtual (
 - Python 3.8 o superior
 - [uv](https://github.com/astral-sh/uv) instalado globalmente
 
-## Instalación
+## Instalacion
 
 1. **Clona el repositorio:**
     ```bash
@@ -35,10 +35,10 @@ Este proyecto es un backend desarrollado en Python. Utiliza un entorno virtual (
     uv pip install -r requirements.txt
     ```
 
-## Ejecución
+## Ejecucion
 
-1. **Activa el entorno virtual** (si no está activo).
-2. **Ejecuta la aplicación:**
+1. **Activa el entorno virtual** (si no esta activo).
+2. **Ejecuta la aplicacion:**
     ```bash
     python main.py
     ```
@@ -46,7 +46,7 @@ Este proyecto es un backend desarrollado en Python. Utiliza un entorno virtual (
 ## Notas
 
 - Todas las dependencias deben ser gestionadas con `uv`.
-- Recuerda actualizar `requirements.txt` tras instalar nuevas librerías:
+- Recuerda actualizar `requirements.txt` tras instalar nuevas librerias:
   ```bash
   uv pip freeze > requirements.txt
   ```

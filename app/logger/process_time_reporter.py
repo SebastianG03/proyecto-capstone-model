@@ -54,7 +54,7 @@ class ProcessTimeReporter:
         stat["min"] = min(stat["min"], duration)
         stat["max"] = max(stat["max"], duration)
         
-        self.logger.info(f"[Time Reporter] Proceso '{process}' detenido. Duración: {duration:.4f} segundos")
+        self.logger.info(f"[Time Reporter] Proceso '{process}' detenido. Duracion: {duration:.4f} segundos")
 
     def publish(self):
         initial_data = self.report_file.read_text('utf-8')

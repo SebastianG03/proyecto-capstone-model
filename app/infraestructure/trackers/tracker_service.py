@@ -10,7 +10,7 @@ from app.entities.interfaces.tracker_service_base import TrackerServiceBase
 
 class TrackerService(TrackerServiceBase):
     """
-    Implementación concreta del servicio de tracking, preparada para streaming.
+    Implementacion concreta del servicio de tracking, preparada para streaming.
     - Mantiene self.last_tracked para acceso externo (p.ej. TeamAssigner)
     """
 

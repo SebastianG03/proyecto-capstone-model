@@ -9,7 +9,7 @@ from app.logger import get_logger
 
 class Tracker:
     """
-    Interfaz base para trackers específicos (players, ball, referees, etc).
+    Interfaz base para trackers especificos (players, ball, referees, etc).
     - NO deben ejecutar el detector.
     - NO deben crear su propio ByteTrack.
     - Deben implementar get_object_tracks que recibe detecciones ya trackeadas.
@@ -32,7 +32,7 @@ class Tracker:
         cx = float((x1 + x2) / 2.0)
         cy = float((y1 + y2) / 2.0)
         return cx, cy
-
+    
     def get_object_tracks(
         self,
         detections: List,
@@ -50,6 +50,23 @@ class Tracker:
         """
         self.logger.info("Tracker.get_object_tracks called.")
         raise NotImplementedError
+    
+    def calculate_iou(self, bboxA: list[float], bboxB: list[float]) -> float:
+        xA = max(bboxA[0], bboxB[0])
+        yA = max(bboxA[1], bboxB[1])
+        xB = min(bboxA[2], bboxB[2])
+        yB = min(bboxA[3], bboxB[3])
+        
+        inter_w = max(0, xB - xA)
+        inter_h = max(0, yB - yA)
+        inter_area = inter_w * inter_h
+        
+        areaA = (bboxA[2] - bboxA[0]) * (bboxA[3] - bboxA[1])
+        areaB = (bboxB[2] - bboxB[0]) * (bboxB[3] - bboxB[1])
+        
+        union =  areaA + areaB - inter_area
+        return inter_area / union if union > 0 else 0
+
 
     def reset(self) -> None:
         """

@@ -66,14 +66,14 @@ def calculate_area_boundary_ends(
     frame: MatLike,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     """
-    Recibe un frame TOP-VIEW (MatLike) y devuelve los extremos de la línea
-    de área (11 m) en coordenadas del mismo espacio que usas para jugadores.
+    Recibe un frame TOP-VIEW (MatLike) y devuelve los extremos de la linea
+    de area (11 m) en coordenadas del mismo espacio que usas para jugadores.
     """
     try:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(gray, 50, 150, apertureSize=3)
         debug_logger.debug(
-            "[CalculateAreaBoundaryEnds] Detectando líneas en el frame para encontrar la línea de área."
+            "[CalculateAreaBoundaryEnds] Detectando lineas en el frame para encontrar la linea de area."
         )
 
         lines = cv2.HoughLinesP(
@@ -86,7 +86,7 @@ def calculate_area_boundary_ends(
         )
         if lines is None:
             debug_logger.debug(
-                "[CalculateAreaBoundaryEnds] No se detectaron líneas en el frame."
+                "[CalculateAreaBoundaryEnds] No se detectaron lineas en el frame."
             )
             return None
 
@@ -98,20 +98,20 @@ def calculate_area_boundary_ends(
         ]  # ~5°
         if not hor:
             debug_logger.debug(
-                "[CalculateAreaBoundaryEnds] No se detectaron líneas horizontales en el frame."
+                "[CalculateAreaBoundaryEnds] No se detectaron lineas horizontales en el frame."
             )
             return None
 
-        # la más baja (línea de área inferior)
+        # la mas baja (linea de area inferior)
         x1, y1, x2, y2 = max(hor, key=lambda line: max(line[1], line[3]))
         debug_logger.debug(
-            "[CalculateAreaBoundaryEnds] Línea de área detectada en coordenadas: "
+            "[CalculateAreaBoundaryEnds] Linea de area detectada en coordenadas: "
             f"({x1}, {y1}), ({x2}, {y2})"
         )
         A = np.array([min(x1, x2), float(y1)], dtype=float)
         B = np.array([max(x1, x2), float(y2)], dtype=float)
         debug_logger.debug(
-            "[CalculateAreaBoundaryEnds] Extremos de la línea de área: "
+            "[CalculateAreaBoundaryEnds] Extremos de la linea de area: "
             f"A={A}, B={B}"
         )
         return A, B
@@ -124,18 +124,18 @@ def calculate_meters_per_pixel(
     p1: np.ndarray, p2: np.ndarray, real_distance_m: float
 ) -> float:
     """
-    Calcula la cantidad de metros por píxel dada una distancia real y dos puntos.
+    Calcula la cantidad de metros por pixel dada una distancia real y dos puntos.
     """
     try:
         p1 = np.array(p1)
         p2 = np.array(p2)
         pixel_distance = dist.euclidean(p1, p2)
         debug_logger.debug(
-            f"[CalculateMetersPerPixel] Distancia en píxeles entre puntos: {pixel_distance}"
+            f"[CalculateMetersPerPixel] Distancia en pixeles entre puntos: {pixel_distance}"
         )
         return real_distance_m / pixel_distance
     except Exception as e:
         error_logger.error(
-            f"[CalculateMetersPerPixel] Error calculando metros por píxel: {e}"
+            f"[CalculateMetersPerPixel] Error calculando metros por pixel: {e}"
         )
         return 0.0

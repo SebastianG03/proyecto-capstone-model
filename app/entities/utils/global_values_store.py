@@ -52,22 +52,22 @@ class GlobalValuesStore(metaclass=singleton.Singleton):
 
     @property
     def max_human_speed_kmh(self) -> float:
-        """Devuelve el valor actual de la velocidad máxima de un humano en km/h."""
+        """Devuelve el valor actual de la velocidad maxima de un humano en km/h."""
         return self.MAX_HUMAN_SPEED_KMH
 
     @property
     def max_accel_ms2(self) -> float:
-        """Devuelve el valor actual de la aceleración máxima de un humano en m/s^2."""
+        """Devuelve el valor actual de la aceleracion maxima de un humano en m/s^2."""
         return self.MAX_ACCEL_MS2
 
     @property
     def max_dist_per_frame_m(self) -> float:
-        """Devuelve el valor actual de la distancia máxima por frame en metros."""
+        """Devuelve el valor actual de la distancia maxima por frame en metros."""
         return self.MAX_DIST_PER_FRAME_M
 
     @property
     def min_dt_s(self) -> float:
-        """Devuelve el valor actual del tiempo mínimo entre frames en segundos."""
+        """Devuelve el valor actual del tiempo minimo entre frames en segundos."""
         return self.MIN_DT_S
     
     @property
@@ -132,7 +132,7 @@ class GlobalValuesStore(metaclass=singleton.Singleton):
     def reset_detected_object(self) -> None:
         self._detected_object.clear()
 
-    # --- Actualización simultánea ---
+    # --- Actualizacion simultanea ---
     def update(
         self, timestamp: Optional[float] = None, fps: Optional[float] = None
     ) -> None:
