@@ -19,9 +19,8 @@ import xgboost as xgb
 
 from app.utils.routes import PLAYER_XGB_MODEL
 
-class PlayerTracker(Tracker):
-    def __init__(self, model: YOLO):
-        super().__init__(model)
+class PlayerMatcher():
+    def __init__(self,):
         self.movement_threshold = 15
         self.kalman_filters: dict[int, PlayerKalmanFilter] = {}
         self.last_timestamps: dict[int, float] = {}
@@ -31,7 +30,7 @@ class PlayerTracker(Tracker):
         self.MAX_SPEED = 30
 
         player_model_exists = (PLAYER_XGB_MODEL / "player_model.pkl").exists()
-        
+
         if player_model_exists:
             self.ml_model = joblib.load((PLAYER_XGB_MODEL / "player_model.pkl").as_posix())
             self.ml_model.set_params(n_estimators=200, max_depth=6, learning_rate=0.05)
@@ -43,242 +42,16 @@ class PlayerTracker(Tracker):
                 objective="binary:logistic"
             )
 
-
-    @override
-    def get_object_tracks(
-        self,
-        detections: List,
-        cls_names_inv,
-        frame_num,
-        db: Session,
-    ):
-        self.logger.info(f"[PlayerTracker] START get_tracker_tracks frame {frame_num}")
-
-        if detections is None:
-            self.logger.info(f"[PlayerTracker] No detecciones para frame {frame_num}")
-            return
-
-        payloads = self.validate_unique_players(detections, frame_num, value_store.globals.timestamp)
-        
-        if payloads is None or len(payloads) == 0:
-            self.logger.info(f"[PlayerTracker] No hay detecciones de jugadores unicas para frame {frame_num}")
-            predicted_payloads = self.handle_missed_players(frame_num)
-            self.save_payloads(predicted_payloads, frame_num)
-            return
-
-        payloads = self.validate_previous_players(frame_num, list(payloads.values()))
-        
-        payloads_states = [State.to_instance(payload) for payload in payloads]
-
-        for state in payloads_states:
-            self.update_kalman(state) 
-        
-        payloads_by_player_id = self.group_states_by_player_id(payloads_states)
-        
-        for player_id, states in payloads_by_player_id.items():
-            player_statuses = []
-            states.sort(key=lambda x: x.frame_num)
-            max_states = len(states)
-            if max_states == 1:
-                continue
-
-            for i in range(max_states):
-                if i + 1 >= max_states:
-                    break
-
-                status = self.calculate_player_status(states[i], states[i + 1])
-                player_statuses.append(status)
-
-            for i in range(len(player_statuses)):
-                if i + 1 >= len(player_statuses):
-                    break
-
-                acceleration = self.calculate_state_acceleration(player_statuses[i], player_statuses[i + 1])
-            
-                if player_id not in self.kalman_filters:
-                    kalman_pred = None, None
-                else:
-                    kf = self.kalman_filters[player_id]
-                    kalman_pred = kf.predict()
-
-                if kalman_pred[0] is None or kalman_pred[1] is None:
-                    continue
-                
-                features = self.build_features(player_statuses[i], states, acceleration, kalman_pred)
-
-                if features is None:
-                    continue
-
-                score = self.predict_reid_probability(features)
-
-                if score > 0.6:
-                    info_logger.info(f"[PlayerTracker] Reidentificando player_id con score {score}")
-
-        self.save_payloads(payloads, frame_num)
-
-
-    def extract_tracker_data(
-        self,
-        detections: List,
-        ) -> List[Tuple[list[float], float, int]]:
-
-        valid_detections = []
-
-        for det in detections:
-            if det.boxes is not None:
-                
-                boxes = det.boxes
-                ids = boxes.id
-                xyxy = boxes.xyxy
-                confs = boxes.conf
-                
-                if ids is None:
-                    info_logger.info("[PlayerTracker] No se encontraron IDs en las detecciones, omitiendo.")
-                    continue
-                
-                for i in range(len(ids)):
-                    track_id = int(ids[i].item())
-                    bbox = xyxy[i].cpu().numpy().tolist()
-                    conf = float(confs[i].item())
-                    
-                    valid_detections.append((bbox, conf, track_id))
-
-        return valid_detections
-
-    def save_payloads(self, payloads: list[dict], frame_num: int):
-        tracks_collection = TrackCollectionPlayer()
-        tools = context.analysis_context.tools
-
-        for payload in payloads:
-            player_id = payload["player_id"]
-            player_exists = tracks_collection.verify_player_exists(player_id)
-            state_exist = tracks_collection.verify_player_state_exists(
-                player_id, frame_num
-            )
-            payload["bbox"] = json.dumps(payload["bbox"])
-            
-            player_payload = {
-                "player_id": player_id,
-            }
-            
-            info_logger.info(f"[PlayerTracker] Procesando player_id {player_id} en frame {frame_num} con payload {payload}, player payload: {player_payload}, player_exists: {player_exists}, state_exist: {state_exist}")
-            
-            if not player_exists:
-                tracks_collection.post(player_payload)
-            
-            if state_exist:
-                state = tracks_collection.patch_state(player_id, frame_num, payload)
-                self.update_global_state_id(state, payload["conf"])
-            else:
-                state = tracks_collection.post_state(payload)
-                self.update_global_state_id(state, payload["conf"])
-                tools.analysis_data_collector.add_row(AnalysisData(
-                    frame=frame_num,
-                    track_id=player_id,
-                    x=payload["x"],
-                    y=payload["y"],
-                    vclass="player",
-                    timestamps=value_store.globals.timestamp,
-                ))
-                
-                
-    def group_states_by_player_id(self, states: List[State]) -> dict[int, List[State]]:
-        states_by_player_id = {}
-        for state in states:
-            player_id = state.player_id
-            if player_id not in states_by_player_id:
-                states_by_player_id[player_id] = []
-            states_by_player_id[player_id].append(state)
-        return states_by_player_id
-
-    def update_global_state_id(self, state: PlayerState | None, conf: float):
-        if state is not None:
-            id = int(f"{state.id}")
-            name = "player"
-            value_store.globals.add_detected_object(DetectedObjectData(name=name, id=id, confidence=conf))
-
-    def validate_unique_players(self, detections: List, frame_num: int, timestamp: float):
-        unique_detections: dict[int, dict[str, Any]] = {} # track_id -> Payload
-        det_data = self.extract_tracker_data(detections)
-
-        if det_data is None or len(det_data) == 0:
-            return {}
-
-        for bbox, conf, track_id in det_data:
-            track_id = int(track_id)
-            cx, cy = self._bbox_to_center(bbox)
-
-            unique_detections[track_id] = {
-                "player_id": track_id,
-                "frame_index": int(frame_num),
-                "bbox": bbox,
-                "x": float(cx),
-                "y": float(cy),
-                "z": 0.0,
-                "timestamp_ms": timestamp,
-                "conf": float(conf),
-            }
-
-        items = list(unique_detections.items())
-        to_remove = set()
-
-        for i in range(len(items)):
-            track_id, detection = items[i]
-
-            bbox_list = detection["bbox"]
-            cx, cy = detection["x"], detection["y"]
-            conf = detection["conf"]
-
-            for j in range(i + 1, len(items)):
-                existing_id, existing_detection = items[j]
-
-                if existing_id == track_id:
-                    continue
-
-                next_bbox_list = existing_detection["bbox"]
-                next_cx, next_cy = existing_detection["x"], existing_detection["y"]
-
-                distance = np.linalg.norm(np.array([cx, cy]) - np.array([next_cx, next_cy]))
-
-                iou = self.calculate_iou(bbox_list, next_bbox_list)
-                info_logger.info(f"[PlayerTracker] Validando detecciones {track_id} y {existing_id} con distancia {distance:.4f} y IoU {iou:.4f} en frame {frame_num}")
-                
-                if track_id not in self.kalman_filters:
-                    mahalanobis_score = np.inf
-                else:
-                    kf = self.kalman_filters[track_id]
-                    mahalanobis_score = kf.mahalanobis_distance(cx, cy)
-
-                info_logger.info(f"[PlayerTracker] Mahalanobis score en validate unique players: {mahalanobis_score}")
-
-                if (
-                    iou > 0.6 and
-                    distance < self.movement_threshold and
-                    mahalanobis_score < self.CHI_GATE):
-                    info_logger.info(f"[PlayerTracker] Detecciones {track_id} y {existing_id} consideradas iguales por IoU en frame {frame_num}")
-                    existing_conf = unique_detections[existing_id]["conf"]
-                    if conf > existing_conf:
-                        to_remove.add(existing_id)
-                    else:
-                        to_remove.add(track_id)
-
-        for rid in to_remove:
-            unique_detections.pop(rid, None)
-
-        return unique_detections
-    
-    def filter_previous_states(self, frame_num: int) -> List[dict]:
-        previous_states = context.analysis_context.tools.player_records.get_states_previous_frame(frame_num)
-
-        if previous_states is None or len(previous_states) == 0:
-            info_logger.info(f"[PlayerTracker] No hay estados anteriores para validar en frame {frame_num}")
+    @staticmethod
+    def filter_states(states: List[PlayerState], column_name: str, reverse: bool = False) -> List[dict]:        
+        if states is None or len(states) == 0:
             return []
-
-        previous_states = [state.to_dict() for state in previous_states]
-        previous_states.sort(key=lambda s: s["frame_index"], reverse=True)
         
-        return previous_states
+        dict_states = [state.to_dict() for state in states]
+        dict_states.sort(key=lambda s: s[column_name], reverse=reverse)
 
+        return dict_states
+    
     def get_unique_previous_states(self, states: List[dict], frame_num: int) -> List[dict]:
         unique_prev = set()
         filtered_states = []
@@ -288,17 +61,18 @@ class PlayerTracker(Tracker):
 
             if frame_num - int(state["frame_index"]) > value_store.globals.fps * 1.5:
                     continue
-            
+
             if self.player_missed_counts.get(pid, 0) > 5:
                 continue
 
             if pid not in unique_prev:
                 unique_prev.add(pid)
                 filtered_states.append(state)
-        
+
         return filtered_states
-    
-    def generate_candidates(self, payload: dict, previous_states: List[dict]):
+
+
+    def generate_candidates(self, payload: dict, previous_states: List[dict], kf: PlayerKalmanFilter):
         candidates = []
         
         x = float(payload["x"])
@@ -307,12 +81,7 @@ class PlayerTracker(Tracker):
         for state in previous_states:
             player_id = state["player_id"]
             state_x, state_y = float(state["x"]), float(state["y"])
-            
-            if player_id not in self.kalman_filters:
-                maha_dist = np.inf
-            else:
-                kf = self.kalman_filters[player_id]
-                maha_dist = kf.mahalanobis_distance(x, y)
+            maha_dist = kf.mahalanobis_distance(x, y)
 
             dist = np.linalg.norm(
                 np.array([x, y]) -
@@ -342,31 +111,21 @@ class PlayerTracker(Tracker):
         self,
         player_id: int,
         payload: dict,
-        prev_state: dict
+        prev_state: dict,
+        kf: PlayerKalmanFilter
     ):
         payload_x, payload_y = float(payload["x"]), float(payload["y"])
-
-        if player_id not in self.kalman_filters:
-            maha_dist = np.inf
-        else:
-            kf = self.kalman_filters[player_id]
-            maha_dist = kf.mahalanobis_distance(payload_x, payload_y)
-
+        maha_dist = kf.mahalanobis_distance(payload_x, payload_y)
         dist = np.linalg.norm(
             np.array([payload_x, payload_y]) -
             np.array([prev_state["x"], prev_state["y"]])
         )
-
-        if player_id not in self.kalman_filters:
-            pred_x, pred_y = None, None
-            residual = np.inf
-        else:
-            kf = self.kalman_filters[player_id]
-            pred_x, pred_y = kf.predict()
-            residual = np.linalg.norm(
-                np.array([pred_x, pred_y]) -
-                np.array([payload_x, payload_y])
-            )
+        
+        pred_x, pred_y = self.predict_player_position(player_id)
+        residual = np.linalg.norm(
+            np.array([pred_x, pred_y]) -
+            np.array([payload_x, payload_y])
+        )
         
         return (
             .5 * maha_dist +
@@ -374,12 +133,13 @@ class PlayerTracker(Tracker):
             .2 * residual
         )        
 
-    def validate_previous_players(self, frame_num, state_payloads: List[dict]):
+    def validate_previous_players(self, frame_num, state_payloads: List[dict], kf: PlayerKalmanFilter):
         if frame_num <= value_store.globals.fps * 2:
             info_logger.info(f"[PlayerTracker] Insuficientes frames para validar estados anteriores en frame {frame_num}")
             return state_payloads
 
-        previous_states = self.filter_previous_states(frame_num)
+        prev_states = context.analysis_context.tools.player_records.get_states_previous_frame(frame_num)
+        previous_states = PlayerMatcher.filter_states(prev_states, "frame_index", True)
         
         if len(previous_states) == 0:
             return state_payloads
@@ -397,11 +157,7 @@ class PlayerTracker(Tracker):
 
                 distance = np.linalg.norm(np.array([prev_x, prev_y]) - np.array([x, y]))
                 
-                if prev_player_id not in self.kalman_filters:
-                    score = np.inf
-                else:
-                    kf = self.kalman_filters[prev_player_id]
-                    score = kf.mahalanobis_distance(x, y)
+                score = kf.mahalanobis_distance(x, y)
 
                 info_logger.info(f"[PlayerTracker] Comparando player_id {state_payload['player_id']} con player_id {prev_player_id} con distancia {distance:.4f} en frame {frame_num}, score {score:.4f} vs chi gate {self.CHI_GATE}")
                 # TODO validar valores de score
@@ -435,7 +191,7 @@ class PlayerTracker(Tracker):
         validated_payloads = self.validate_payloads(detected_players=state_payloads, predicted_players=predicted_payloads)
 
         return validated_payloads
-    
+        
     def calculate_player_status(self, state_a: State, state_b: State):
         
         if state_a.player_id != state_b.player_id:
@@ -515,6 +271,16 @@ class PlayerTracker(Tracker):
         self.last_timestamps[player_id] = current_time
 
         return kf.x
+
+    def predict_player_position(self, player_id: int):
+        if player_id not in self.kalman_filters:
+            info_logger.info(f"[PlayerTracker] No hay filtro de Kalman para player_id {player_id}, no se puede predecir posicion.")  
+            return None, None
+
+        kf = self.kalman_filters[player_id]
+        x_pred, P_pred = kf.predict()
+
+        return x_pred, P_pred
     
     def build_features(
         self,
@@ -530,8 +296,7 @@ class PlayerTracker(Tracker):
 
         last = history[-1]
         x, y = last.x, last.y
-        vx = state.vx
-        vy = state.vy
+        vx, vy = state.vx, state.vy
         pred_x, pred_y = kalman_pred
         ky_x, ky_y = float(pred_x), float(np.squeeze(pred_x))
         ax, ay = acceleration[0], acceleration[1]
@@ -571,12 +336,7 @@ class PlayerTracker(Tracker):
             if time_gap > value_store.globals.fps * 2:
                 continue
 
-            if player_id not in self.kalman_filters:
-                pred_x, pred_y = None, None
-            else:
-                kf = self.kalman_filters[player_id]
-                pred_x, pred_y = kf.predict()
-            
+            pred_x, pred_y = self.predict_player_position(player_id)
             info_logger.info(f"[PlayerTracker] Kalman pred {pred_x}, {pred_y}")
             if pred_x is None or pred_y is None:
                 continue
@@ -631,24 +391,8 @@ class PlayerTracker(Tracker):
             if i not in used_predicted
         ]
 
-        # TODO Validar que sea correcto mezclar ambas listas
         info_logger.info(f"[PlayerTracker] Validando {len(detected_players)} players detectados y {len(remaining_predicted)} players predichos")
         info_logger.info(f"[PlayerTracker] Predicted: {remaining_predicted}")
         info_logger.info(f"[PlayerTracker] Detected: {detected_players}")
         
         return detected_players + remaining_predicted
-
-    def predict_reid_probability(self, features: np.ndarray) -> float:
-        try:
-            x = features.reshape(1, -1)
-            pred = self.ml_model.predict(x)
-            
-            if isinstance(pred, np.ndarray):
-                return pred[0]
-            else:
-                return pred
-            
-        except Exception as e:
-            info_logger.error(f"[PlayerTracker] Error al predecir reid: {e}")
-            return 0
-        

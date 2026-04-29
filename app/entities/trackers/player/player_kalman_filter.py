@@ -26,7 +26,7 @@ class PlayerKalmanFilter:
     def predict(self):
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
-        return self.x
+        return self.x, self.P
 
     def update(self, z: np.ndarray):
         z = z.reshape(2, 1)
@@ -40,3 +40,27 @@ class PlayerKalmanFilter:
         self.P = (I - K @ self.H) @ self.P
 
         return self.x
+    
+    def mahalanobis_distance(self, observed_x: float, observed_y: float):
+        H = np.array([
+            [1,0,0,0],
+            [0,1,0,0]
+        ])
+
+        z = np.array([
+            [observed_x],
+            [observed_y]
+        ])
+
+        x_pred, P_pred = self.predict()
+
+        if x_pred is None:
+            return np.inf
+
+        innovation = z - H @ x_pred
+        S = H @ P_pred @ H.T + self.R
+        S_inv = np.linalg.pinv(S)
+
+        d2 = innovation.T @ S_inv @ innovation
+
+        return float(np.sqrt(d2.item()))
