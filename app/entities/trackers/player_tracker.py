@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.entities.interfaces.tracker_base import Tracker
 from app.entities.collections import TrackCollectionPlayer
 from app.entities.models.PlayerModels import PlayerState, State, PlayerStatus
+from app.entities.trackers.player.player_matcher import PlayerMatcher
 import app.entities.utils.global_values_store as value_store
 from app.entities.models.detected_object_data import AnalysisData, DetectedObjectData
 from app.entities.trackers.player.player_kalman_filter import PlayerKalmanFilter
@@ -22,27 +23,7 @@ from app.utils.routes import PLAYER_XGB_MODEL
 class PlayerTracker(Tracker):
     def __init__(self, model: YOLO):
         super().__init__(model)
-        self.movement_threshold = 15
-        self.kalman_filters: dict[int, PlayerKalmanFilter] = {}
-        self.last_timestamps: dict[int, float] = {}
-        self.CHI_GATE = np.sqrt(5.991)
-        self.id_switch_votes = {}
-        self.player_missed_counts: dict[int, int] = {} # track_id -> missed_count
-        self.MAX_SPEED = 30
-
-        player_model_exists = (PLAYER_XGB_MODEL / "player_model.pkl").exists()
-        
-        if player_model_exists:
-            self.ml_model = joblib.load((PLAYER_XGB_MODEL / "player_model.pkl").as_posix())
-            self.ml_model.set_params(n_estimators=200, max_depth=6, learning_rate=0.05)
-        else:
-            self.ml_model = xgb.XGBClassifier(
-                n_estimators=300,
-                max_depth=6,
-                learning_rate=0.05,
-                objective="binary:logistic"
-            )
-
+        self.player_matcher = PlayerMatcher()
 
     @override
     def get_object_tracks(
@@ -62,16 +43,18 @@ class PlayerTracker(Tracker):
         
         if payloads is None or len(payloads) == 0:
             self.logger.info(f"[PlayerTracker] No hay detecciones de jugadores unicas para frame {frame_num}")
-            predicted_payloads = self.handle_missed_players(frame_num)
+            detected_ids = set(payload["player_id"] for payload in payloads.values())
+            predicted_payloads = self.player_matcher.handle_missed_players(frame_num, detected_ids)
             self.save_payloads(predicted_payloads, frame_num)
             return
-
-        payloads = self.validate_previous_players(frame_num, list(payloads.values()))
+        
+        
+        payloads = self.player_matcher.validate_previous_players(frame_num, list(payloads.values()))
         
         payloads_states = [State.to_instance(payload) for payload in payloads]
 
         for state in payloads_states:
-            self.update_kalman(state) 
+            self.player_matcher.update_kalman(state) 
         
         payloads_by_player_id = self.group_states_by_player_id(payloads_states)
         
@@ -86,33 +69,33 @@ class PlayerTracker(Tracker):
                 if i + 1 >= max_states:
                     break
 
-                status = self.calculate_player_status(states[i], states[i + 1])
+                status = self.player_matcher.calculate_player_status(states[i], states[i + 1])
                 player_statuses.append(status)
 
             for i in range(len(player_statuses)):
                 if i + 1 >= len(player_statuses):
                     break
 
-                acceleration = self.calculate_state_acceleration(player_statuses[i], player_statuses[i + 1])
+                acceleration = self.player_matcher.calculate_state_acceleration(player_statuses[i], player_statuses[i + 1])
             
-                if player_id not in self.kalman_filters:
+                if player_id not in self.player_matcher.kalman_filters:
                     kalman_pred = None, None
                 else:
-                    kf = self.kalman_filters[player_id]
+                    kf = self.player_matcher.kalman_filters[player_id]
                     kalman_pred = kf.predict()
 
                 if kalman_pred[0] is None or kalman_pred[1] is None:
                     continue
                 
-                features = self.build_features(player_statuses[i], states, acceleration, kalman_pred)
+                features = self.player_matcher.build_features(player_statuses[i], states, acceleration, kalman_pred)
 
                 if features is None:
                     continue
 
-                score = self.predict_reid_probability(features)
+                # score = self.player_matcher.predict_reid_probability(features)
 
-                if score > 0.6:
-                    info_logger.info(f"[PlayerTracker] Reidentificando player_id con score {score}")
+                # if score > 0.6:
+                #     info_logger.info(f"[PlayerTracker] Reidentificando player_id con score {score}")
 
         self.save_payloads(payloads, frame_num)
 
@@ -148,6 +131,12 @@ class PlayerTracker(Tracker):
     def save_payloads(self, payloads: list[dict], frame_num: int):
         tracks_collection = TrackCollectionPlayer()
         tools = context.analysis_context.tools
+        trained = self.player_matcher.train_from_buffer()
+
+        if trained:
+            info_logger.info("[PlayerTracker] Modelo ML actualizado al final del partido.")
+        else:
+            info_logger.info("[PlayerTracker] No se entrenó — buffer insuficiente, se acumula para el próximo partido.")
 
         for payload in payloads:
             player_id = payload["player_id"]
@@ -243,18 +232,18 @@ class PlayerTracker(Tracker):
                 iou = self.calculate_iou(bbox_list, next_bbox_list)
                 info_logger.info(f"[PlayerTracker] Validando detecciones {track_id} y {existing_id} con distancia {distance:.4f} y IoU {iou:.4f} en frame {frame_num}")
                 
-                if track_id not in self.kalman_filters:
+                if track_id not in self.player_matcher.kalman_filters:
                     mahalanobis_score = np.inf
                 else:
-                    kf = self.kalman_filters[track_id]
+                    kf = self.player_matcher.kalman_filters[track_id]
                     mahalanobis_score = kf.mahalanobis_distance(cx, cy)
 
                 info_logger.info(f"[PlayerTracker] Mahalanobis score en validate unique players: {mahalanobis_score}")
 
                 if (
                     iou > 0.6 and
-                    distance < self.movement_threshold and
-                    mahalanobis_score < self.CHI_GATE):
+                    distance < self.player_matcher.movement_threshold and
+                    mahalanobis_score < self.player_matcher.CHI_GATE):
                     info_logger.info(f"[PlayerTracker] Detecciones {track_id} y {existing_id} consideradas iguales por IoU en frame {frame_num}")
                     existing_conf = unique_detections[existing_id]["conf"]
                     if conf > existing_conf:
@@ -266,389 +255,3 @@ class PlayerTracker(Tracker):
             unique_detections.pop(rid, None)
 
         return unique_detections
-    
-    def filter_previous_states(self, frame_num: int) -> List[dict]:
-        previous_states = context.analysis_context.tools.player_records.get_states_previous_frame(frame_num)
-
-        if previous_states is None or len(previous_states) == 0:
-            info_logger.info(f"[PlayerTracker] No hay estados anteriores para validar en frame {frame_num}")
-            return []
-
-        previous_states = [state.to_dict() for state in previous_states]
-        previous_states.sort(key=lambda s: s["frame_index"], reverse=True)
-        
-        return previous_states
-
-    def get_unique_previous_states(self, states: List[dict], frame_num: int) -> List[dict]:
-        unique_prev = set()
-        filtered_states = []
-
-        for state in states:
-            pid = state["player_id"]
-
-            if frame_num - int(state["frame_index"]) > value_store.globals.fps * 1.5:
-                    continue
-            
-            if self.player_missed_counts.get(pid, 0) > 5:
-                continue
-
-            if pid not in unique_prev:
-                unique_prev.add(pid)
-                filtered_states.append(state)
-        
-        return filtered_states
-    
-    def generate_candidates(self, payload: dict, previous_states: List[dict]):
-        candidates = []
-        
-        x = float(payload["x"])
-        y = float(payload["y"])
-        
-        for state in previous_states:
-            player_id = state["player_id"]
-            state_x, state_y = float(state["x"]), float(state["y"])
-            
-            if player_id not in self.kalman_filters:
-                maha_dist = np.inf
-            else:
-                kf = self.kalman_filters[player_id]
-                maha_dist = kf.mahalanobis_distance(x, y)
-
-            dist = np.linalg.norm(
-                np.array([x, y]) -
-                np.array([state_x, state_y])
-            )
-            
-            dt = (
-                float(payload["timestamp_ms"]) -
-                float(state["timestamp_ms"])
-            ) * 0.001
-            
-            if maha_dist > self.CHI_GATE or dist > self.movement_threshold * 3 or dt <= 0:
-                continue
-
-            implied_speed = dist / dt
-
-            if implied_speed > self.MAX_SPEED:
-                continue
-
-            candidates.append({
-                (player_id, maha_dist, dist)
-            })
-            
-        return candidates
-
-    def compute_match_cost(
-        self,
-        player_id: int,
-        payload: dict,
-        prev_state: dict
-    ):
-        payload_x, payload_y = float(payload["x"]), float(payload["y"])
-
-        if player_id not in self.kalman_filters:
-            maha_dist = np.inf
-        else:
-            kf = self.kalman_filters[player_id]
-            maha_dist = kf.mahalanobis_distance(payload_x, payload_y)
-
-        dist = np.linalg.norm(
-            np.array([payload_x, payload_y]) -
-            np.array([prev_state["x"], prev_state["y"]])
-        )
-
-        if player_id not in self.kalman_filters:
-            pred_x, pred_y = None, None
-            residual = np.inf
-        else:
-            kf = self.kalman_filters[player_id]
-            pred_x, pred_y = kf.predict()
-            residual = np.linalg.norm(
-                np.array([pred_x, pred_y]) -
-                np.array([payload_x, payload_y])
-            )
-        
-        return (
-            .5 * maha_dist +
-            .3 * dist +
-            .2 * residual
-        )        
-
-    def validate_previous_players(self, frame_num, state_payloads: List[dict]):
-        if frame_num <= value_store.globals.fps * 2:
-            info_logger.info(f"[PlayerTracker] Insuficientes frames para validar estados anteriores en frame {frame_num}")
-            return state_payloads
-
-        previous_states = self.filter_previous_states(frame_num)
-        
-        if len(previous_states) == 0:
-            return state_payloads
-
-        filtered_states = self.get_unique_previous_states(previous_states, frame_num)
-        matches = []
-
-        for i, state_payload in enumerate(state_payloads):
-            x = float(state_payload["x"])
-            y = float(state_payload["y"])
-
-            for state in filtered_states:
-                prev_x, prev_y = float(state["x"]), float(state["y"])
-                prev_player_id = int(state["player_id"])
-
-                distance = np.linalg.norm(np.array([prev_x, prev_y]) - np.array([x, y]))
-                
-                if prev_player_id not in self.kalman_filters:
-                    score = np.inf
-                else:
-                    kf = self.kalman_filters[prev_player_id]
-                    score = kf.mahalanobis_distance(x, y)
-
-                info_logger.info(f"[PlayerTracker] Comparando player_id {state_payload['player_id']} con player_id {prev_player_id} con distancia {distance:.4f} en frame {frame_num}, score {score:.4f} vs chi gate {self.CHI_GATE}")
-                # TODO validar valores de score
-                if score > self.CHI_GATE or np.isinf(score):
-                    continue
-
-                matches.append((score, i, prev_player_id))
-
-        matches.sort(key=lambda x: x[0])
-        used_prev_ids = set()
-        assigned_payloads = set()
-
-        for score, payload_idx, prev_id in matches:
-            if payload_idx not in assigned_payloads:
-                info_logger.info(f"[PlayerTracker] Nuevo jugador en frame {frame_num} con player_id {state_payloads[payload_idx]['player_id']} cerca de player_id {prev_id} del frame anterior con distancia {score:.4f}")
-
-            if payload_idx in assigned_payloads or prev_id in used_prev_ids:
-                continue
-            
-            payload = state_payloads[payload_idx]
-            current_id = payload["player_id"]
-            
-            if current_id != prev_id:
-                info_logger.info(f"[PlayerTracker] Reasignando player_id {current_id} a {prev_id} por score {score:.4f} en frame {frame_num}")
-                payload["player_id"] = prev_id
-
-            assigned_payloads.add(payload_idx)
-            used_prev_ids.add(prev_id)
-        
-        predicted_payloads = self.handle_missed_players(frame_num=frame_num)
-        validated_payloads = self.validate_payloads(detected_players=state_payloads, predicted_players=predicted_payloads)
-
-        return validated_payloads
-    
-    def calculate_player_status(self, state_a: State, state_b: State):
-        
-        if state_a.player_id != state_b.player_id:
-            raise ValueError("Los estados deben pertenecer al mismo jugador para calcular el estado del jugador.")
-
-        xo = np.array([state_a.x, state_a.y])
-        xf = np.array([state_b.x, state_b.y])
-        time_sec = abs(state_b.timestamp - state_a.timestamp) * 0.001 
-        
-        delta_x = xf - xo
-        
-        vx = delta_x[0] / time_sec
-        vy = delta_x[1] / time_sec
-        speed = np.sqrt(vx**2 + vy**2)
-        direction = math.atan2(delta_x[1], delta_x[0])
-        direction = math.degrees(direction)
-
-        return PlayerStatus(
-            player_id=state_b.player_id,
-            frame_index=state_b.frame_num,
-            vx=vx,
-            vy=vy,
-            speed=speed,
-            direction=direction,
-            time=state_b.timestamp,
-            delta_x=delta_x,
-            xo=xo,
-            xf=xf
-        )
-
-    def calculate_state_acceleration(self, status_a: PlayerStatus, status_b: PlayerStatus):
-        if status_a.player_id != status_b.player_id:
-            raise ValueError("Los estados deben pertenecer al mismo jugador para calcular la aceleracion.")
-        
-        delta_vx = status_b.vx - status_a.vx
-        delta_vy = status_b.vy - status_a.vy
-        delta_time = abs(status_b.time - status_a.time)
-        
-        if delta_time == 0:
-            return np.asarray([0, 0])
-        
-        ax = delta_vx / delta_time
-        ay = delta_vy / delta_time
-        return np.asarray([ax, ay])
-
-    def update_kalman(self, state: State):
-        player_id = state.player_id
-        current_time = state.timestamp
-
-        if player_id not in self.kalman_filters:
-            kf = PlayerKalmanFilter(dt=1/30)  # fallback
-            kf.x[:2] = np.array([[state.x], [state.y]])
-            self.kalman_filters[player_id] = kf
-            self.last_timestamps[player_id] = current_time
-            return kf.x
-
-        kf = self.kalman_filters[player_id]
-
-        prev_time = self.last_timestamps[player_id]
-        dt = (current_time - prev_time) * 0.001
-
-        if dt <= 0:
-            dt = 1/30
-
-        kf.F = np.array([
-            [1, 0, dt, 0],
-            [0, 1, 0, dt],
-            [0, 0, 1, 0 ],
-            [0, 0, 0, 1 ]
-        ])
-
-        kf.predict()
-
-        z = np.array([state.x, state.y])
-        kf.update(z)
-
-        self.last_timestamps[player_id] = current_time
-
-        return kf.x
-    
-    def build_features(
-        self,
-        state: PlayerStatus,
-        history: list[State],
-        acceleration: np.ndarray,
-        kalman_pred: Tuple[np.ndarray, np.ndarray]):
-        WINDOWS_SIZE =  30
-        features = []
-        
-        if len(history) < 2:
-            return None
-
-        last = history[-1]
-        x, y = last.x, last.y
-        vx = state.vx
-        vy = state.vy
-        pred_x, pred_y = kalman_pred
-        ky_x, ky_y = float(pred_x), float(np.squeeze(pred_x))
-        ax, ay = acceleration[0], acceleration[1]
-
-        features.extend([x, y, vx, vy, ax, ay, ky_x, ky_y])
-        history_window = history[-WINDOWS_SIZE:]
-
-        while len(history_window) < WINDOWS_SIZE:
-            history_window.insert(0, history_window[0])
-
-        for i in range(1, len(history_window)):
-            dx = history_window[i].x - history_window[i - 1].x
-            dy = history_window[i].y - history_window[i - 1].y
-            features.extend([dx, dy])
-
-        return np.array(features, dtype=np.float32)
-    
-    def save_ml_model(self):
-        joblib.dump(self.ml_model, PLAYER_XGB_MODEL.as_posix())
-
-    def handle_missed_players(self, frame_num: int):
-        predicted_payloads = []
-        if frame_num - value_store.globals.fps < 0:
-            return []
-
-        previous_states = context.analysis_context.tools.player_records.get_states_previous_frame(frame_num)
-
-        if not previous_states:
-            return []
-
-
-        for state in previous_states:
-            state = state.to_dict()
-            player_id = state["player_id"]
-
-            time_gap = frame_num - state["frame_index"]
-            if time_gap > value_store.globals.fps * 2:
-                continue
-
-            if player_id not in self.kalman_filters:
-                pred_x, pred_y = None, None
-            else:
-                kf = self.kalman_filters[player_id]
-                pred_x, pred_y = kf.predict()
-            
-            info_logger.info(f"[PlayerTracker] Kalman pred {pred_x}, {pred_y}")
-            if pred_x is None or pred_y is None:
-                continue
-
-            pred_x = float(np.squeeze(pred_x))
-            pred_y = float(np.squeeze(pred_y))
-            
-            residual = np.linalg.norm(
-                np.array([state["x"], state["y"]]) -
-                np.array([pred_x, pred_y])
-            )
-
-            payload = {
-                "player_id": player_id,
-                "frame_index": frame_num,
-                "bbox": [pred_x - 30, pred_y - 45, pred_x + 30, pred_y + 45],
-                "x": pred_x,
-                "y": pred_y,
-                "z": 0.0,
-                "conf": 0.3,
-                "timestamp_ms": value_store.globals.timestamp
-            }
-
-            predicted_payloads.append(payload)
-
-        return predicted_payloads
-
-    def validate_payloads(self, detected_players: list[dict], predicted_players: list[dict]):
-        if len(predicted_players) == 0:
-            return detected_players
-
-        if len(detected_players) == 0:
-            return predicted_players
-
-        same_predicted_cords = [] # Keep ids from predicted players that has the same x and y fromm detected players
-        threshold = self.movement_threshold * 0.5 # distance between both centers of the bbox to be considered the same player
-        used_predicted = set()
-
-        for detected_index, det in enumerate(detected_players):
-            for predicted_index, pred in enumerate(predicted_players):
-                dis = np.sqrt((det["x"] - pred["x"])**2 + (det["y"] - pred["y"])**2)
-                if dis < threshold:
-                    same_predicted_cords.append((detected_index, predicted_index))
-        
-        
-        for detected_index, predicted_index in same_predicted_cords:
-            detected_players[detected_index]["player_id"] = predicted_players[predicted_index]["player_id"]
-            used_predicted.add(predicted_index)
-        
-        remaining_predicted = [
-            pred for i, pred in enumerate(predicted_players)
-            if i not in used_predicted
-        ]
-
-        # TODO Validar que sea correcto mezclar ambas listas
-        info_logger.info(f"[PlayerTracker] Validando {len(detected_players)} players detectados y {len(remaining_predicted)} players predichos")
-        info_logger.info(f"[PlayerTracker] Predicted: {remaining_predicted}")
-        info_logger.info(f"[PlayerTracker] Detected: {detected_players}")
-        
-        return detected_players + remaining_predicted
-
-    def predict_reid_probability(self, features: np.ndarray) -> float:
-        try:
-            x = features.reshape(1, -1)
-            pred = self.ml_model.predict(x)
-            
-            if isinstance(pred, np.ndarray):
-                return pred[0]
-            else:
-                return pred
-            
-        except Exception as e:
-            info_logger.error(f"[PlayerTracker] Error al predecir reid: {e}")
-            return 0
-        

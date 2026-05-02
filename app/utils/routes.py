@@ -25,6 +25,8 @@ DEPTH_MODEL_PATH = MODELS_DIR / DEPTH_MODEL_NAME
 TRACKER_CONFIG_PATH = MODELS_DIR / "tracker"
 BYTETRACK_CONFIG_PATH = TRACKER_CONFIG_PATH / "bytetrack.yaml"
 PLAYER_XGB_MODEL = MODELS_DIR / "player_XGB"
+PLAYER_YOLO_DATA = MODELS_DIR / "YOLO_pickles"
+RETRAINED_MODELS = MODELS_DIR / "retrained_models"
 
 def ensure_directories():
     """
@@ -44,7 +46,9 @@ def ensure_directories():
         MEMORY_TRACKER_DIR,
         DETECTED_OBJECTS_METRICS_DIR,
         TRACKER_CONFIG_PATH,
-        PLAYER_XGB_MODEL
+        PLAYER_XGB_MODEL,
+        PLAYER_YOLO_DATA,
+        RETRAINED_MODELS
     ]:
         if not directory.exists():
             directory.mkdir(parents=True, exist_ok=True)
