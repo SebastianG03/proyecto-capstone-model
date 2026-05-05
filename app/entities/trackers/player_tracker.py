@@ -1,7 +1,10 @@
 import json
 import math
 from typing import Any, List, Tuple, override
+import uuid
 
+import cv2
+from cv2.typing import MatLike
 import joblib
 import numpy as np
 from ultralytics.models import YOLO
@@ -18,6 +21,7 @@ import app.entities.utils.tools_context as context
 from app.logger import info_logger
 import xgboost as xgb
 
+from app.utils import routes
 from app.utils.routes import PLAYER_XGB_MODEL
 
 class PlayerTracker(Tracker):
@@ -28,6 +32,7 @@ class PlayerTracker(Tracker):
     @override
     def get_object_tracks(
         self,
+        frame: MatLike,
         detections: List,
         cls_names_inv,
         frame_num,
@@ -39,7 +44,7 @@ class PlayerTracker(Tracker):
             self.logger.info(f"[PlayerTracker] No detecciones para frame {frame_num}")
             return
 
-        payloads = self.validate_unique_players(detections, frame_num, value_store.globals.timestamp)
+        payloads = self.validate_unique_players(detections, frame_num, value_store.globals.timestamp, frame)
         
         if payloads is None or len(payloads) == 0:
             self.logger.info(f"[PlayerTracker] No hay detecciones de jugadores unicas para frame {frame_num}")
@@ -103,9 +108,11 @@ class PlayerTracker(Tracker):
     def extract_tracker_data(
         self,
         detections: List,
-        ) -> List[Tuple[list[float], float, int]]:
+        ) -> Tuple[List[Tuple[list[float], float, int]], List[np.ndarray]]:
 
-        valid_detections = []
+        valid_detections: List[Tuple[list[float], float, int]] = []
+        polygons_list: List[np.ndarray] = []
+        info_logger.info(f"[PlayerTracker] Detecciones recibidas: {detections}")
 
         for det in detections:
             if det.boxes is not None:
@@ -122,11 +129,36 @@ class PlayerTracker(Tracker):
                 for i in range(len(ids)):
                     track_id = int(ids[i].item())
                     bbox = xyxy[i].cpu().numpy().tolist()
+                    x1, y1, x2, y2 = bbox
                     conf = float(confs[i].item())
-                    
+                    poly = np.array([
+                        [x1, y1],
+                        [x2, y1],
+                        [x2, y2],
+                        [x1, y2]
+                    ])
+                    polygons_list.append(poly)
                     valid_detections.append((bbox, conf, track_id))
 
-        return valid_detections
+        return valid_detections, polygons_list
+
+    def safe_data(
+        self,
+        detections: List[np.ndarray],
+        frame: MatLike
+        ):
+        img_path = f"{routes.PLAYER_CUSTOM_DATASET}/{uuid.uuid4()}.jpg"
+        cv2.imwrite (img_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        label_path = img_path.replace(".jpg", ".txt")
+        h, w = frame.shape[:2]
+        
+        with open(label_path, "w") as f:
+            for poly in detections:
+                norm_coords = " ".join(
+                f"{px/w:.7f} {py/h:.7f}"
+                for (px, py) in poly
+                )
+                f.write(f"{0} {norm_coords}\n")
 
     def save_payloads(self, payloads: list[dict], frame_num: int):
         tracks_collection = TrackCollectionPlayer()
@@ -186,9 +218,10 @@ class PlayerTracker(Tracker):
             name = "player"
             value_store.globals.add_detected_object(DetectedObjectData(name=name, id=id, confidence=conf))
 
-    def validate_unique_players(self, detections: List, frame_num: int, timestamp: float):
+    def validate_unique_players(self, detections: List, frame_num: int, timestamp: float, frame: MatLike):
         unique_detections: dict[int, dict[str, Any]] = {} # track_id -> Payload
-        det_data = self.extract_tracker_data(detections)
+        det_data, poly_data = self.extract_tracker_data(detections)
+        self.safe_data(poly_data, frame)
 
         if det_data is None or len(det_data) == 0:
             return {}

@@ -49,6 +49,7 @@ trocr/
 *.xz
 *.tar
 *.lzma
+datasets/
 
 # Installer logs
 pip-log.txt

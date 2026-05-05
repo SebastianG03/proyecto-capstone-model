@@ -15,7 +15,7 @@ from app.utils.routes import PLAYER_XGB_MODEL
 
 class PlayerMatcher():
     def __init__(self,):
-        self.movement_threshold = 15
+        self.movement_threshold = 30
         self.kalman_filters: dict[int, PlayerKalmanFilter] = {}
         self._training_buffer: list[tuple[np.ndarray, int]] = []
         self.BUFFER_MIN_SAMPLES = 500

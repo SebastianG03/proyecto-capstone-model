@@ -1,6 +1,7 @@
 import logging
 from typing import List
 
+from cv2.typing import MatLike
 import supervision as sv
 from ultralytics.models import YOLO
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ class Tracker:
     
     def get_object_tracks(
         self,
+        frame: MatLike,
         detections: List,
         cls_names_inv: dict[str, int],
         frame_num: int,

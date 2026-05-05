@@ -86,7 +86,7 @@ def run_analysis(video_name: str, match_id: int) -> dict[int, str] | None:
     value_store.globals.video_anotator = VideoAnotator(
         output_path=Path(f"{ANOTATED_VIDEOS_DIR}/{video_name[:10]}_{match_id}.mp4"),
         fps=value_store.globals.fps,
-        frame_size=value_store.globals.frame_size,
+        # frame_size=value_store.globals.frame_size,
         colors=value_store.globals.anotated_colors,
         window_name=f"Annotated Video of match {match_id}",
         show_preview=True

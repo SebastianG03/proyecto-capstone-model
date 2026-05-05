@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Sequence
 from uuid import uuid4
 
 import cv2
@@ -21,7 +20,6 @@ class VideoAnotator:
         self,
         output_path: Path,
         fps,
-        frame_size: tuple[int, int],
         colors: dict,
         show_preview: bool = True,
         window_name: str = "Annotated Video"
@@ -31,6 +29,7 @@ class VideoAnotator:
             self.show_preview = show_preview
             self.window_name = window_name
             self.is_closed = False
+            self.frame_size = (640,640)
 
             fourcc = cv2.VideoWriter.fourcc(*"mp4v")
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,7 +37,7 @@ class VideoAnotator:
                 output_path.as_posix(),
                 fourcc,
                 fps,
-                frame_size
+                self.frame_size
             )
 
             if self.show_preview:
@@ -97,13 +96,24 @@ class VideoAnotator:
             The annotated frame to be saved
         """
         output_path = ANOTATED_OUTPUT_IMAGES / f"annotated_frame_{frame_num}_{uuid4()}.jpg"
-        cv2.imwrite(output_path, frame)
+        cv2.imwrite(output_path.as_posix(), frame)
 
-    def write(self, frame, frame_num: int):
+    def write(self, frame: np.ndarray, frame_num: int):
         if DEBUG:
             self.save_frame(frame, frame_num)
         if self.is_closed:
             return
+
+        if frame.ndim == 3 and frame.shape[2] == 4:
+            frame = frame[..., :3]
+
+        h, w = frame.shape[:2]
+        if w == 0 or h == 0:
+            return
+
+        if (w, h) != self.frame_size:
+            frame = cv2.resize(frame, self.frame_size)
+
         self.writer.write(frame)
 
     def show(self, frame):

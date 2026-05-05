@@ -1,6 +1,9 @@
 from asyncio.log import logger
 import json
-from typing import Any, Dict, List, Optional, override
+from typing import Any, Dict, List, Optional, Tuple, override
+import uuid
+import cv2
+from cv2.typing import MatLike
 from filterpy.kalman import KalmanFilter
 
 import numpy as np
@@ -15,6 +18,7 @@ from app.logger import info_logger, error_logger
 import app.entities.utils.global_values_store as value_store            
 from app.entities.models.detected_object_data import AnalysisData, DetectedObjectData
 import app.entities.utils.tools_context as context
+from app.utils import routes
 
 class BallTracker(Tracker):
     def __init__(
@@ -54,13 +58,14 @@ class BallTracker(Tracker):
     @override
     def get_object_tracks(
         self,
+        frame: MatLike,
         detections: List,
         cls_names_inv,
         frame_num,
         db: Session,
     ):
         try:
-            ball_coordinates, conf = self._extract_ball(detections, cls_names_inv)
+            ball_coordinates, conf = self._extract_ball(detections, cls_names_inv, frame)
             self._update_kf(ball_coordinates, frame_num)
             self._persist_state(frame_num, conf or 0.35)
             logger.debug(f"[BallTracker] frame {frame_num} owner={self.owner_id}")
@@ -69,8 +74,26 @@ class BallTracker(Tracker):
                 f"[BallTracker] Error en get_object_tracks frame {frame_num}: {e}"
             )
             raise e
+    
+    def safe_data(
+        self,
+        detections: List[np.ndarray],
+        frame: MatLike
+        ):
+        img_path = f"{routes.PLAYER_CUSTOM_DATASET}/{uuid.uuid4()}.jpg"
+        cv2.imwrite (img_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        label_path = img_path.replace(".jpg", ".txt")
+        h, w = frame.shape[:2]
+        
+        with open(label_path, "w") as f:
+            for poly in detections:
+                norm_coords = " ".join(
+                f"{px/w:.7f} {py/h:.7f}"
+                for (px, py) in poly
+                )
+                f.write(f"{0} {norm_coords}\n")
 
-    def _extract_ball(self, detections: List, cls_names_inv: dict):
+    def _extract_ball(self, detections: List, cls_names_inv: dict, frame: MatLike):
         try:
             info_logger.info("[BallTracker] extract_ball llamado")
             if detections is None or len(detections) == 0:
@@ -78,23 +101,34 @@ class BallTracker(Tracker):
                 return None, None
 
             info_logger.info("[BallTracker] extract_ball procesando detecciones")
-            
+            self.logger.info(f"[BallTracker] Detecciones recibidas: {detections}")
+
             bboxes = []
             confidences = []
+            polygons = []
+            
             for det in detections:
                 if det.boxes is not None:
                     for box in det.boxes:
                         info_logger.info(f"Deteccion: {box.xyxy}, clase: {box.cls}, conf: {box.conf}")
                         bbox = box.xyxy.cpu().numpy().squeeze(0)
+                        x1, y1, x2, y2 = bbox
                         conf = box.conf.cpu().numpy().squeeze(0)
-                        
+
+                        polygons.append(np.array([
+                            [x1, y1],
+                            [x2, y1],
+                            [x2, y2],
+                            [x1, y2]
+                        ]))
                         bboxes.append(bbox)
-                        confidences.append(conf)
+                        confidences.append(conf)            
 
             if len(bboxes) == 0:
                 info_logger.info("[BallTracker] No hay bboxes")
                 return self._recover_ball_position()
-            
+
+            self.safe_data(polygons, frame)
             xyxy = np.array(bboxes, dtype=np.float32).reshape(-1, 4)
             confs = np.array(confidences, dtype=np.float32)
 

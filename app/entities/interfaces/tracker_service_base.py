@@ -38,9 +38,6 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         self.ball_model = self.__load_detector__(ball_model_path)
         self.player_model = self.__load_detector__(player_model_path)
         self.logger = get_logger(logging.DEBUG)
-        self.hard_examples: dict[str, List[dict]] = {}
-        self.CONFIDENCE_THRESHOLD = 0.25
-        self.HARD_EXAMPLE_LIMIT = 500
 
         self.ball_tracker = sv.ByteTrack(
             frame_rate=25,
@@ -210,10 +207,6 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
             player_result = player_results[0]
             ball_result = ball_results[0]
           
-            # todo dividirlo en player y ball  
-            self._collect_hard_examples(frame, player_results, frame_num, "player")
-            self._collect_hard_examples(frame, ball_results, frame_num, "ball")
-
             self.logger.info("Mapeando clases...")
             player_cls_names = getattr(player_result, "names", {})
             ball_cls_names = getattr(ball_result, "names", {})
@@ -246,6 +239,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
                             cls_names_inv=player_cls_names_inv,
                             frame_num=frame_num,
                             db=db,
+                            frame=frame
                         )
                     else:
                         tracker.get_object_tracks(
@@ -253,6 +247,7 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
                             cls_names_inv=ball_cls_names_inv,
                             frame_num=frame_num,
                             db=db,
+                            frame=frame
                         )
                 except Exception as e:
                     self.logger.exception(f"Error executing tracker {tracker}: {e}")
@@ -315,29 +310,3 @@ class TrackerServiceBase(metaclass=AbstractSingleton):
         except Exception as e:
             self.logger.exception(f"Error adding to player {track}: {e}")
             raise e
-
-    def _collect_hard_examples(self, frame: MatLike, results, frame_num: int, model: str):
-        """Guarda frames donde la confianza es baja para reentrenamiento."""
-        for result in results:
-            if result.boxes is None:
-                continue
-            confs = result.boxes.conf.cpu().numpy()
-            if len(confs) == 0 or confs.mean() < self.CONFIDENCE_THRESHOLD:
-                example = {
-                    "frame": frame.copy(),
-                    "frame_num": frame_num,
-                    "avg_conf": float(confs.mean()) if len(confs) > 0 else 0.0,
-                }
-
-                self.hard_examples[model].append(example)
-                if len(self.hard_examples[model]) >= self.HARD_EXAMPLE_LIMIT:
-                    self._flush_hard_examples(model)
-
-    def _flush_hard_examples(self, model: str):
-        """Persiste los ejemplos difíciles a disco para revisión/etiquetado."""
-        import pickle, time
-        path = f"{routes.PLAYER_YOLO_DATA}/examples_{model}_{int(time.time())}.pkl"
-        examples = self.hard_examples[model]
-        with open(path, "wb") as f:
-            pickle.dump(examples, f)
-        self.logger.info(f"Flushed {len(examples)} hard examples to {path}")
