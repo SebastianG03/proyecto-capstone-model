@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+*.ini
 # Distribution / packaging
 .Python
 build/
@@ -31,6 +31,25 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+
+# Data
+trocr/
+*.sqlite*
+*.sqlite-wal
+*.sqlite-shm
+*.txt
+*.json
+*.task
+*.zip
+*.tar.gz
+*.rar
+*.7z
+*.bz2
+*.gz
+*.xz
+*.tar
+*.lzma
+datasets/
 
 # Installer logs
 pip-log.txt
@@ -172,8 +191,142 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-app/res/input_videos/
-app/res/output_videos/
-app/res/stubs/
+
+
+app/res/temp/
+app/res/cache/
+
+# Archivos de datos del proyecto
+app/tracks.json
+*.tracks
+*.stub
+*.pickle
+*.pkl
+
+# Modelos de ML/AI (grandes archivos binarios)
+*.pt
+*.pth
+*.onnx
+*.h5
+*.hdf5
+*.pb
+*.tflite
+*.weights
+*.caffemodel
+*.prototxt
+checkpoints/
+weights/
+*.torchscript
+# Archivos de video (muy grandes)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+*.wmv
+*.webm
+*.m4v
+*.3gp
+*.ogv
+
+# Archivos de imagen procesados
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+*.tif
+*.gif
+*.webp
+# Excepto imagenes de documentacion
+!docs/**/*.png
+!docs/**/*.jpg
+!README_images/
+
+# Archivos de audio
+*.wav
+*.mp3
+*.aac
+*.flac
+*.ogg
+
+# Archivos de datos y metricas
+*.csv
+*.tsv
+*.json
+*.xml
+*.yaml
+*.yml
+# Excepto archivos de configuracion
+!*config*.json
+!*config*.yaml
+!*config*.yml
+!pyproject.toml
+!requirements*.txt
+
+# Archivos temporales del sistema
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Archivos de logs especificos del proyecto
+logs/
+*.log.*
+log_*.txt
+
+# Archivos de backup
+*.bak
+*.backup
+*.old
+*.orig
+*.tmp
+*~
+
+# IDEs especificos
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains IDEs
+.idea/
+*.swp
+*.swo
+
+# Archivos de configuracion local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+config_local.py
+settings_local.py
+
+# Archivos de benchmarks y profiling
+*.prof
+*.profile
+benchmark_results/
+profile_results/
+
+# Archivos de GPU/CUDA
+*.cubin
+*.fatbin
+*.ptx
+
+# Archivos de TensorBoard
+tensorboard_logs/
+runs/
+events.out.tfevents.*
+=======
 
 app/tracks.json
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md

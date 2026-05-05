@@ -1,0 +1,46 @@
+import logging
+
+from sqlalchemy.orm import Session
+
+from app.infraestructure.trackers.tracker_service import TrackerService
+import app.entities.utils.tools_context as context 
+from app.logger import get_logger
+
+logger = get_logger(logging.DEBUG)
+
+def process_tracks_and_position(
+    db: Session,
+    tracker: TrackerService,
+    camera_movement: tuple[float, float],
+    pixels_to_meters: float,
+):
+    tools = context.analysis_context.tools
+    logger.info("Procesando tracks y posiciones...")
+    try:
+        for collection in (tools.player_records, tools.ball_records):
+            scale = tools.camera_movement_estimator.get_current_scale()
+
+            last_track = collection.get_last()
+            if last_track is None:
+                logger.info("No hay track para actualizar, saltando...")
+                continue
+            logger.info(f"ultimo track ID: {last_track.to_dict().get('player_id', None)}")
+
+            logger.info("Añadiendo posicion al track...")
+            tracker.add_position_to_track(db, last_track)
+
+            logger.info("Ajustando posiciones segun movimiento de camara...")
+            tools.camera_movement_estimator.add_adjust_positions_to_tracks(
+                db=db,
+                camera_movement_per_frame=camera_movement,
+                pixels_to_meters=pixels_to_meters,
+                scale=scale,
+                track=last_track,
+            )
+            logger.info("Posiciones ajustadas.")
+
+            logger.info("Aplicando transformacion de vista...")
+            tools.view_transformer.add_transformed_positions(db)
+    except Exception as e:
+        logger.error(f"Error procesando tracks y posiciones: {e}")
+        raise e

@@ -1,0 +1,4 @@
+[flake8]
+exclude = __init__.py,.venv,__pycache__,settings.ini,env,migrations,res
+max-line-length = 100
+agressive = 10
