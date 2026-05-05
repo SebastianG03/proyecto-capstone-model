@@ -1,21 +1,31 @@
 import logging
-from logging.handlers import RotatingFileHandler
 
+def get_logger(log_level: int = logging.INFO) -> logging.Logger:
+    logger = logging.getLogger("app_info")
+    logger.setLevel(log_level)
 
-info_logger = logging.getLogger("info_logger")
-info_logger.setLevel(logging.INFO)
-handler = RotatingFileHandler("info.log", maxBytes=100000000, backupCount=3)
-handler.setLevel(logging.INFO)
-info_logger.addHandler(handler)
+    
+    if logger.handlers:
+        logger.handlers.clear()
+        
+    formatter = logging.Formatter(
+        '[%(asctime)s] [%(levelname)8s] [%(name)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    console_handler =logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
 
-debug_logger = logging.getLogger("debug_logger")
-debug_logger.setLevel(logging.DEBUG)
-handler = RotatingFileHandler("debug.log", maxBytes=100000000, backupCount=3)
-handler.setLevel(logging.DEBUG)
-debug_logger.addHandler(handler)
+    file_handler = logging.FileHandler("model_execution.log", mode='w')
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(formatter)
 
-error_logger = logging.getLogger("error_logger")
-error_logger.setLevel(logging.ERROR)
-handler = RotatingFileHandler("error.log", maxBytes=100000000, backupCount=3)
-handler.setLevel(logging.ERROR)
-error_logger.addHandler(handler)
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    
+    return logger
+
+error_logger = get_logger(logging.ERROR)
+debug_logger = get_logger(logging.DEBUG)
+info_logger = get_logger(logging.INFO)

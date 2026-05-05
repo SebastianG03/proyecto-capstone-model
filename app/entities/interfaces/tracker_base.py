@@ -1,35 +1,47 @@
-import supervision as sv
-from app.entities.interfaces.record_collection_base import RecordCollectionBase
-from sqlalchemy.orm import Session
+import logging
+from typing import List
 
-class Tracker():
+from cv2.typing import MatLike
+import supervision as sv
+from ultralytics.models import YOLO
+from sqlalchemy.orm import Session
+from app.logger import get_logger
+
+
+class Tracker:
     """
-    Interfaz base para trackers específicos (players, ball, referees, etc).
+    Interfaz base para trackers especificos (players, ball, referees, etc).
     - NO deben ejecutar el detector.
     - NO deben crear su propio ByteTrack.
     - Deben implementar get_object_tracks que recibe detecciones ya trackeadas.
     """
 
-    def __init__(self, model):
-        self.model = model
-    
-    def _bbox_to_center(self, bbox: list) -> tuple[float, float]:
-        print("[Tracker] Convirtiendo bbox a centro...")
-        x1, y1, x2, y2 = bbox
-        print(f"[Tracker] Bbox recibida: {bbox}, coordenadas extraídas: x1={x1}, y1={y1}, x2={x2}, y2={y2}")
-        cx = float((x1 + x2) / 2.0)
-        print(f"[Tracker] cx={cx}")
-        cy = float((y1 + y2) / 2.0)
-        print(f"[Tracker] cy={cy}")
-        return cx, cy
+    def __init__(self, model: YOLO):
+        self.model: YOLO = model
+        self.logger = get_logger(logging.DEBUG)
+        self.tracker = sv.ByteTrack(
+            frame_rate=30,
+            lost_track_buffer=60,
+            track_activation_threshold=0.15,
+            minimum_matching_threshold=0.9,
+            minimum_consecutive_frames=1
+        )
 
+    def _bbox_to_center(self, bbox: list) -> tuple[float, float]:
+        self.logger.info("[Tracker] Convirtiendo bbox a centro...")
+        x1, y1, x2, y2 = bbox
+        cx = float((x1 + x2) / 2.0)
+        cy = float((y1 + y2) / 2.0)
+        return cx, cy
+    
     def get_object_tracks(
-            self,
-            detection_with_tracks: sv.Detections,
-            cls_names_inv: dict[str, int],
-            frame_num: int,
-            detection_supervision: sv.Detections,
-            db: Session) -> None:
+        self,
+        frame: MatLike,
+        detections: List,
+        cls_names_inv: dict[str, int],
+        frame_num: int,
+        db: Session,
+    ) -> None:
         """
         Procesa detecciones *ya trackeadas* por el servicio:
         - detection_with_tracks: sv.Detections con atributos de tracking (id, etc.)
@@ -38,8 +50,25 @@ class Tracker():
         - detection_supervision: detecciones originales en formato supervision (sin tracks)
         - tracks_collection: repo/collection para persistir resultados
         """
-        print("Tracker.get_object_tracks called.")
+        self.logger.info("Tracker.get_object_tracks called.")
         raise NotImplementedError
+    
+    def calculate_iou(self, bboxA: list[float], bboxB: list[float]) -> float:
+        xA = max(bboxA[0], bboxB[0])
+        yA = max(bboxA[1], bboxB[1])
+        xB = min(bboxA[2], bboxB[2])
+        yB = min(bboxA[3], bboxB[3])
+        
+        inter_w = max(0, xB - xA)
+        inter_h = max(0, yB - yA)
+        inter_area = inter_w * inter_h
+        
+        areaA = (bboxA[2] - bboxA[0]) * (bboxA[3] - bboxA[1])
+        areaB = (bboxB[2] - bboxB[0]) * (bboxB[3] - bboxB[1])
+        
+        union =  areaA + areaB - inter_area
+        return inter_area / union if union > 0 else 0
+
 
     def reset(self) -> None:
         """

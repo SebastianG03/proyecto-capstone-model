@@ -1,11 +1,10 @@
-from sqlalchemy import Column, DateTime, Integer, Float, func
-from app.modules.services.database import Base
+from sqlalchemy import Column, DateTime, Integer, Float, String, func
+from app.infraestructure.database.connection_manager import Base
+
 
 class HeatmapPointModel(Base):
     __tablename__ = "heatmap_point"
     id = Column(Integer, primary_key=True, index=True)
     player_id = Column(Integer, index=True)
-    frame_number = Column(Integer, index=True)
-    x = Column(Float)
-    z = Column(Float)
+    path = Column(String, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

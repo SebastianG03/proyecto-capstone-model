@@ -33,8 +33,13 @@ MANIFEST
 *.spec
 
 # Data
-*.sqlite
+trocr/
+*.sqlite*
+*.sqlite-wal
+*.sqlite-shm
 *.txt
+*.json
+*.task
 *.zip
 *.tar.gz
 *.rar
@@ -44,6 +49,7 @@ MANIFEST
 *.xz
 *.tar
 *.lzma
+datasets/
 
 # Installer logs
 pip-log.txt
@@ -232,7 +238,7 @@ weights/
 *.tif
 *.gif
 *.webp
-# Excepto imágenes de documentación
+# Excepto imagenes de documentacion
 !docs/**/*.png
 !docs/**/*.jpg
 !README_images/
@@ -244,14 +250,14 @@ weights/
 *.flac
 *.ogg
 
-# Archivos de datos y métricas
+# Archivos de datos y metricas
 *.csv
 *.tsv
 *.json
 *.xml
 *.yaml
 *.yml
-# Excepto archivos de configuración
+# Excepto archivos de configuracion
 !*config*.json
 !*config*.yaml
 !*config*.yml
@@ -268,7 +274,7 @@ ehthumbs.db
 Thumbs.db
 desktop.ini
 
-# Archivos de logs específicos del proyecto
+# Archivos de logs especificos del proyecto
 logs/
 *.log.*
 log_*.txt
@@ -281,7 +287,7 @@ log_*.txt
 *.tmp
 *~
 
-# IDEs específicos
+# IDEs especificos
 # VSCode
 .vscode/
 !.vscode/settings.json
@@ -294,7 +300,7 @@ log_*.txt
 *.swp
 *.swo
 
-# Archivos de configuración local
+# Archivos de configuracion local
 .env.local
 .env.development.local
 .env.test.local
@@ -320,3 +326,7 @@ events.out.tfevents.*
 =======
 
 app/tracks.json
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md

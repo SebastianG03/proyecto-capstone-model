@@ -1,1 +1,0 @@
-from .diagram_processor import generate_diagrams
